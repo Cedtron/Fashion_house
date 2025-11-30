@@ -1,0 +1,1 @@
+import { getRole } from './auth'; export function hasRole(roles: string[]){ const r = getRole(); return roles.includes(r); }

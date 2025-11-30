@@ -1,0 +1,12 @@
+{
+  "name": "ffashion-monorepo",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "start": "npx concurrently \"npm run start --prefix back-end\" \"npm run dev --prefix front-end\"",
+    "install:all": "npm install --prefix back-end && npm install --prefix front-end"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0"
+  }
+}
