@@ -496,7 +496,8 @@ export default function StockReduction() {
                             {stock.imagePath && (
                               <img
                                 className="object-cover w-12 h-12 rounded-lg"
-                                src={stock.imagePath}
+                                
+                                 src={stock.imagePath.startsWith('http') ? stock.imagePath : `${api.defaults.baseURL}${stock.imagePath}`}
                                 alt={stock.product}
                               />
                             )}

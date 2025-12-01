@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { FiSearch, FiEye, FiTrendingUp, FiTrendingDown, FiPackage, FiFilter, FiDownload, FiChevronDown, FiChevronUp, FiDroplet } from "react-icons/fi";
+import { FiSearch, FiEye, FiUser, FiCalendar, FiTrendingUp, FiTrendingDown, FiPackage, FiFilter, FiDownload, FiArrowUp, FiArrowDown, FiPlus, FiMinus, FiChevronDown, FiChevronUp, FiDroplet } from "react-icons/fi";
 import api from '../utils/axios';
 import { useNavigate } from "react-router-dom";
 
@@ -81,7 +81,7 @@ const StockSummary = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("ALL");
   const [selectedShadeFilter, setSelectedShadeFilter] = useState("ALL");
-  const [sortField, setSortField] = useState<keyof StockMovement>("product");
+  const [sortField, setSortField] = useState<keyof StockMovement>("updatedAt");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const [expandedStock, setExpandedStock] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -103,11 +103,13 @@ const StockSummary = () => {
     try {
       const response = await api.get('/stock');
       const stocksData = response.data || [];
-      // Sort by creation date (newest first)
+      console.log('Fetched stocks from database:', stocksData.length);
+      // Sort by updated date (newest first)
       const sortedStocks = stocksData.sort((a: Stock, b: Stock) => 
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
       );
       setStocks(sortedStocks);
+      console.log('Stocks set:', sortedStocks.length);
     } catch (error) {
       console.error('Error fetching stocks:', error);
     } finally {
@@ -120,6 +122,7 @@ const StockSummary = () => {
       const response = await api.get('/stock/tracking/all');
       // Ensure trackingData is always an array
       const data = response.data || [];
+      console.log('Fetched tracking data:', data.length);
       setTrackingData(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Error fetching tracking data:', error);
@@ -128,25 +131,100 @@ const StockSummary = () => {
     }
   };
 
+  // Helper function to parse quantity changes from description
+  const parseQuantityChangeFromDescription = (description: string) => {
+    console.log('Parsing description:', description);
+    
+    // Pattern for ADJUST action: "Stock DECREMENT: val | 3 units | From: 5 → To: 2"
+    if (description.includes('Stock DECREMENT:')) {
+      const parts = description.split('|');
+      if (parts.length >= 3) {
+        const unitsMatch = parts[1].match(/(\d+)\s*units/);
+        const fromToMatch = parts[2].match(/From:\s*(\d+)\s*→\s*To:\s*(\d+)/);
+        
+        if (unitsMatch && fromToMatch) {
+          const changeAmount = parseInt(unitsMatch[1]);
+          const oldQuantity = parseInt(fromToMatch[1]);
+          const newQuantity = parseInt(fromToMatch[2]);
+          
+          console.log('Parsed DECREMENT:', { oldQuantity, newQuantity, changeAmount });
+          return { oldQuantity, newQuantity, changeAmount, changeType: 'decrease' as const };
+        }
+      }
+    }
+    
+    // Pattern for UPDATE with quantity changes: "quantity: 0 → 5"
+    const quantityMatch = description.match(/quantity:\s*(\d+)\s*→\s*(\d+)/);
+    if (quantityMatch) {
+      const oldQuantity = parseInt(quantityMatch[1]);
+      const newQuantity = parseInt(quantityMatch[2]);
+      const changeAmount = Math.abs(newQuantity - oldQuantity);
+      const changeType = newQuantity > oldQuantity ? 'increase' : 'decrease';
+      
+      console.log('Parsed quantity update:', { oldQuantity, newQuantity, changeAmount, changeType });
+      return { oldQuantity, newQuantity, changeAmount, changeType };
+    }
+    
+    // Pattern for shade update: "Updated shade #204000 for stock POO1"
+    const shadeMatch = description.match(/Updated shade (#[a-fA-F0-9]+) for stock/);
+    if (shadeMatch) {
+      console.log('Shade update detected:', shadeMatch[1]);
+      // For shade updates, we can't parse quantities from description
+      return null;
+    }
+    
+    // Pattern for CREATE action with quantity in description
+    if (description.includes('Created stock:') && description.includes('with')) {
+      // Extract product name and check if it has shades
+      const productMatch = description.match(/Created stock:\s*([^(]+)\s*\(/);
+      const shadesMatch = description.match(/with\s*(\d+)\s*shades/);
+      
+      if (productMatch) {
+        console.log('CREATE action for:', productMatch[1].trim());
+        // We'll handle CREATE separately
+      }
+    }
+    
+    return null;
+  };
+
   // Calculate stock movements with quantity changes
   useEffect(() => {
-    if (stocks.length === 0 || !Array.isArray(trackingData)) return;
+    if (stocks.length === 0) {
+      console.log('No stocks data available yet');
+      return;
+    }
+
+    console.log('=== STARTING STOCK MOVEMENTS CALCULATION ===');
+    console.log('Total stocks:', stocks.length);
+    console.log('Total tracking entries:', trackingData.length);
 
     const movements: StockMovement[] = stocks.map(stock => {
       const hasShades = stock.shades && stock.shades.length > 0;
       const isFabric = stock.category === "Fabric";
       
-      // Get all tracking data for this stock
+      // Get all tracking data for this stock, sorted by date (newest first)
       const stockTracking = Array.isArray(trackingData) 
-        ? trackingData.filter(track => track.stockId === stock.id)
+        ? trackingData
+            .filter(track => track.stockId === stock.id)
+            .sort((a, b) => new Date(b.performedAt).getTime() - new Date(a.performedAt).getTime())
         : [];
+
+      console.log(`\n=== Processing stock ${stock.id}: ${stock.product} (${stock.stockId}) ===`);
+      console.log('Category:', stock.category);
+      console.log('Has shades:', hasShades);
+      console.log('Current quantity:', stock.quantity);
+      console.log('Updated at:', stock.updatedAt);
+      console.log('Stock tracking entries:', stockTracking.length);
 
       // Calculate current stock
       let currentStock = 0;
       if (isFabric && hasShades) {
         currentStock = stock.shades.reduce((sum, shade) => sum + (shade.quantity || 0), 0);
+        console.log('Fabric with shades - current stock from shades:', currentStock);
       } else {
-        currentStock = stock.quantity;
+        currentStock = stock.quantity || 0;
+        console.log('Non-fabric - current stock:', currentStock);
       }
 
       // Initialize totals
@@ -155,63 +233,101 @@ const StockSummary = () => {
       const quantityChanges: StockMovement['quantityChanges'] = [];
       const shadeNetChanges: { [colorName: string]: number } = {};
 
-      console.log(`=== Processing stock ${stock.stockId} (${stock.product}) ===`);
-      console.log('Total tracking entries:', stockTracking.length);
-
-      // Process each tracking entry
-      stockTracking.forEach((track, index) => {
-        console.log(`\n--- Track ${index + 1}: ${track.action} ---`);
-        console.log('Old Data:', track.oldData);
-        console.log('New Data:', track.newData);
-
-        // Handle CREATE actions
-        if (track.action === "CREATE" && track.newData) {
-          console.log('CREATE ACTION DETECTED');
+      // Process CREATE action first to get initial stock
+      const createAction = stockTracking.find(track => track.action === "CREATE");
+      if (createAction) {
+        console.log('\n--- Found CREATE action ---');
+        console.log('Description:', createAction.description);
+        
+        // For non-fabric items, count current quantity as initial addition
+        if (!isFabric || !hasShades) {
+          // Check if this stock has been updated
+          const updateActions = stockTracking.filter(track => 
+            track.action === "UPDATE" || track.action === "ADJUST"
+          );
           
-          if (isFabric && track.newData.shades && Array.isArray(track.newData.shades)) {
-            // Fabric with shades - sum all initial shade quantities
-            track.newData.shades.forEach((shade: any) => {
-              const initialQuantity = Number(shade.quantity) || 0;
-              console.log(`Shade ${shade.colorName}: initial quantity = ${initialQuantity}`);
-              
-              if (initialQuantity > 0) {
-                totalAdded += initialQuantity;
-                console.log(`ADDED ${initialQuantity} to totalAdded. New total: ${totalAdded}`);
-                
-                quantityChanges.push({
-                  oldQuantity: 0,
-                  newQuantity: initialQuantity,
-                  changeType: 'increase',
-                  changeAmount: initialQuantity,
-                  performedAt: track.performedAt,
-                  performedBy: track.performedBy,
-                  action: track.action,
-                  description: `Initial creation of shade ${shade.colorName}`,
-                  isShadeUpdate: true,
-                  shadeName: shade.colorName,
-                  itemType: 'shade'
-                });
-
-                // Initialize net change for this shade
-                if (!shadeNetChanges[shade.colorName]) {
-                  shadeNetChanges[shade.colorName] = 0;
-                }
-                shadeNetChanges[shade.colorName] += initialQuantity;
-              }
-            });
-          } else if (track.newData.quantity > 0) {
-            // Non-fabric stock creation
-            const initialQuantity = Number(track.newData.quantity) || 0;
-            console.log(`Non-fabric creation with quantity: ${initialQuantity}`);
-            
-            totalAdded += initialQuantity;
-            console.log(`ADDED ${initialQuantity} to totalAdded. New total: ${totalAdded}`);
+          if (updateActions.length === 0) {
+            // No updates, so current stock is the initial creation
+            totalAdded += currentStock;
+            console.log(`Added initial stock ${currentStock} to totalAdded. Total: ${totalAdded}`);
             
             quantityChanges.push({
               oldQuantity: 0,
-              newQuantity: initialQuantity,
+              newQuantity: currentStock,
               changeType: 'increase',
-              changeAmount: initialQuantity,
+              changeAmount: currentStock,
+              performedAt: createAction.performedAt,
+              performedBy: createAction.performedBy,
+              action: createAction.action,
+              description: createAction.description,
+              isShadeUpdate: false,
+              itemType: 'stock'
+            });
+          }
+        } else if (isFabric && hasShades) {
+          // For fabric with shades, sum all shade quantities
+          const initialShadeQuantity = stock.shades.reduce((sum, shade) => sum + (shade.quantity || 0), 0);
+          totalAdded += initialShadeQuantity;
+          console.log(`Added initial fabric shades ${initialShadeQuantity} to totalAdded. Total: ${totalAdded}`);
+          
+          quantityChanges.push({
+            oldQuantity: 0,
+            newQuantity: initialShadeQuantity,
+            changeType: 'increase',
+            changeAmount: initialShadeQuantity,
+            performedAt: createAction.performedAt,
+            performedBy: createAction.performedBy,
+            action: createAction.action,
+            description: createAction.description,
+            isShadeUpdate: true,
+            itemType: 'shade'
+          });
+        }
+      } else if (stockTracking.length === 0 && currentStock > 0) {
+        // No tracking data but stock exists
+        totalAdded += currentStock;
+        console.log(`Added existing stock ${currentStock} to totalAdded. Total: ${totalAdded}`);
+        
+        quantityChanges.push({
+          oldQuantity: 0,
+          newQuantity: currentStock,
+          changeType: 'increase',
+          changeAmount: currentStock,
+          performedAt: stock.createdAt,
+          performedBy: 'system',
+          action: 'CREATE',
+          description: 'Existing stock from database',
+          isShadeUpdate: false,
+          itemType: 'stock'
+        });
+      }
+
+      // Process UPDATE and ADJUST actions to calculate changes
+      stockTracking.forEach((track, index) => {
+        if (track.action === "UPDATE" || track.action === "ADJUST") {
+          console.log(`\n--- Processing ${track.action} action ${index + 1} ---`);
+          console.log('Description:', track.description);
+          
+          const parsedChange = parseQuantityChangeFromDescription(track.description);
+          
+          if (parsedChange) {
+            const { oldQuantity, newQuantity, changeAmount, changeType } = parsedChange;
+            
+            console.log(`Parsed change: ${oldQuantity} → ${newQuantity} (${changeType} ${changeAmount})`);
+            
+            if (changeType === 'increase') {
+              totalAdded += changeAmount;
+              console.log(`Added ${changeAmount} to totalAdded. Total: ${totalAdded}`);
+            } else {
+              totalRemoved += changeAmount;
+              console.log(`Added ${changeAmount} to totalRemoved. Total: ${totalRemoved}`);
+            }
+            
+            quantityChanges.push({
+              oldQuantity,
+              newQuantity,
+              changeType,
+              changeAmount,
               performedAt: track.performedAt,
               performedBy: track.performedBy,
               action: track.action,
@@ -219,117 +335,24 @@ const StockSummary = () => {
               isShadeUpdate: false,
               itemType: 'stock'
             });
-          }
-        }
-
-        // Handle UPDATE actions - this is where we calculate quantity changes
-        else if (track.action === "UPDATE" && track.oldData && track.newData) {
-          console.log('UPDATE ACTION DETECTED');
-          
-          // Check if this is a shade update
-          if (isFabric && track.oldData.colorName && track.newData.colorName) {
-            const oldQuantity = Number(track.oldData.quantity) || 0;
-            const newQuantity = Number(track.newData.quantity) || 0;
-            
-            console.log(`Shade ${track.oldData.colorName}: OLD=${oldQuantity}, NEW=${newQuantity}`);
-
-            if (oldQuantity !== newQuantity) {
-              const difference = newQuantity - oldQuantity;
-              console.log(`Difference: ${difference}`);
-
-              if (difference > 0) {
-                // Quantity increased
-                totalAdded += difference;
-                console.log(`ADDED ${difference} to totalAdded. New total: ${totalAdded}`);
-                
-                quantityChanges.push({
-                  oldQuantity,
-                  newQuantity,
-                  changeType: 'increase',
-                  changeAmount: difference,
-                  performedAt: track.performedAt,
-                  performedBy: track.performedBy,
-                  action: track.action,
-                  description: track.description,
-                  isShadeUpdate: true,
-                  shadeName: track.oldData.colorName,
-                  itemType: 'shade'
-                });
-              } else if (difference < 0) {
-                // Quantity decreased
-                const removedAmount = Math.abs(difference);
-                totalRemoved += removedAmount;
-                console.log(`ADDED ${removedAmount} to totalRemoved. New total: ${totalRemoved}`);
-                
-                quantityChanges.push({
-                  oldQuantity,
-                  newQuantity,
-                  changeType: 'decrease',
-                  changeAmount: removedAmount,
-                  performedAt: track.performedAt,
-                  performedBy: track.performedBy,
-                  action: track.action,
-                  description: track.description,
-                  isShadeUpdate: true,
-                  shadeName: track.oldData.colorName,
-                  itemType: 'shade'
-                });
-              }
-
-              // Update net change for this shade
-              if (!shadeNetChanges[track.oldData.colorName]) {
-                shadeNetChanges[track.oldData.colorName] = 0;
-              }
-              shadeNetChanges[track.oldData.colorName] += difference;
-              console.log(`Shade ${track.oldData.colorName} net change: ${shadeNetChanges[track.oldData.colorName]}`);
-            }
-          }
-          // Check if this is a stock quantity update
-          else if (track.oldData.quantity !== undefined && track.newData.quantity !== undefined) {
-            const oldQuantity = Number(track.oldData.quantity) || 0;
-            const newQuantity = Number(track.newData.quantity) || 0;
-            
-            console.log(`Stock quantity: OLD=${oldQuantity}, NEW=${newQuantity}`);
-
-            if (oldQuantity !== newQuantity) {
-              const difference = newQuantity - oldQuantity;
-              console.log(`Difference: ${difference}`);
-
-              if (difference > 0) {
-                // Quantity increased
-                totalAdded += difference;
-                console.log(`ADDED ${difference} to totalAdded. New total: ${totalAdded}`);
-                
-                quantityChanges.push({
-                  oldQuantity,
-                  newQuantity,
-                  changeType: 'increase',
-                  changeAmount: difference,
-                  performedAt: track.performedAt,
-                  performedBy: track.performedBy,
-                  action: track.action,
-                  description: track.description,
-                  isShadeUpdate: false,
-                  itemType: 'stock'
-                });
-              } else if (difference < 0) {
-                // Quantity decreased
-                const removedAmount = Math.abs(difference);
-                totalRemoved += removedAmount;
-                console.log(`ADDED ${removedAmount} to totalRemoved. New total: ${totalRemoved}`);
-                
-                quantityChanges.push({
-                  oldQuantity,
-                  newQuantity,
-                  changeType: 'decrease',
-                  changeAmount: removedAmount,
-                  performedAt: track.performedAt,
-                  performedBy: track.performedBy,
-                  action: track.action,
-                  description: track.description,
-                  isShadeUpdate: false,
-                  itemType: 'stock'
-                });
+          } else if (track.description.includes('Updated shade')) {
+            // Shade update - we need to track these separately
+            const shadeMatch = track.description.match(/Updated shade (#[a-fA-F0-9]+) for stock/);
+            if (shadeMatch) {
+              const shadeName = shadeMatch[1];
+              console.log(`Shade update for ${shadeName}, but no quantity change parsed`);
+              
+              // For fabric shades, we'll calculate net change from current vs initial
+              if (isFabric && hasShades) {
+                const shade = stock.shades.find(s => s.colorName === shadeName);
+                if (shade) {
+                  // Initialize net change if not exists
+                  if (!shadeNetChanges[shadeName]) {
+                    shadeNetChanges[shadeName] = 0;
+                  }
+                  // We can't determine exact change without old/new data
+                  console.log(`Shade ${shadeName} current: ${shade.quantity}`);
+                }
               }
             }
           }
@@ -338,7 +361,7 @@ const StockSummary = () => {
 
       const netChange = totalAdded - totalRemoved;
 
-      console.log(`=== FINAL for ${stock.product} ===`);
+      console.log(`\n=== FINAL TOTALS for ${stock.product} ===`);
       console.log('TOTAL ADDED:', totalAdded);
       console.log('TOTAL REMOVED:', totalRemoved);
       console.log('NET CHANGE:', netChange);
@@ -346,6 +369,7 @@ const StockSummary = () => {
       console.log('QUANTITY CHANGES COUNT:', quantityChanges.length);
       console.log('SHADE NET CHANGES:', shadeNetChanges);
 
+      // Prepare shade details for display
       const shadeDetails = {
         totalShades: stock.shades?.length || 0,
         shadeQuantities: stock.shades?.map(shade => ({
@@ -376,6 +400,7 @@ const StockSummary = () => {
         stockItem: stock,
         shadeDetails,
         hasShades,
+        updatedAt: stock.updatedAt,
         createdAt: stock.createdAt,
         quantityChanges: quantityChanges.sort((a, b) => 
           new Date(b.performedAt).getTime() - new Date(a.performedAt).getTime()
@@ -384,14 +409,20 @@ const StockSummary = () => {
     });
 
     // Log final system totals
-    console.log('=== SYSTEM FINAL TOTALS ===');
+    console.log('\n=== SYSTEM FINAL TOTALS ===');
     const systemTotalAdded = movements.reduce((sum, m) => sum + m.totalAdded, 0);
     const systemTotalRemoved = movements.reduce((sum, m) => sum + m.totalRemoved, 0);
+    const systemCurrentStock = movements.reduce((sum, m) => sum + m.currentStock, 0);
+    const systemNetChange = systemTotalAdded - systemTotalRemoved;
+    
     console.log('SYSTEM TOTAL ADDED:', systemTotalAdded);
     console.log('SYSTEM TOTAL REMOVED:', systemTotalRemoved);
+    console.log('SYSTEM NET CHANGE:', systemNetChange);
+    console.log('SYSTEM CURRENT STOCK:', systemCurrentStock);
+    console.log('TOTAL PRODUCTS:', movements.length);
     
     movements.forEach(movement => {
-      console.log(`${movement.product}: +${movement.totalAdded} / -${movement.totalRemoved}`);
+      console.log(`${movement.product}: +${movement.totalAdded} / -${movement.totalRemoved} (Current: ${movement.currentStock})`);
     });
 
     setStockMovements(movements);
@@ -435,7 +466,7 @@ const StockSummary = () => {
       endDate.setHours(23, 59, 59, 999); // Include entire end date
 
       filtered = filtered.filter(movement => {
-        const movementDate = new Date(movement.stockItem.createdAt);
+        const movementDate = new Date(movement.updatedAt);
         return movementDate >= startDate && movementDate <= endDate;
       });
     }
@@ -445,7 +476,7 @@ const StockSummary = () => {
       let aValue = a[sortField];
       let bValue = b[sortField];
 
-      if (sortField === 'lastActivity') {
+      if (sortField === 'lastActivity' || sortField === 'updatedAt' || sortField === 'createdAt') {
         aValue = new Date(aValue as string).getTime();
         bValue = new Date(bValue as string).getTime();
       }
@@ -483,10 +514,6 @@ const StockSummary = () => {
     totalRemoved: filteredMovements.reduce((sum, m) => sum + m.totalRemoved, 0)
   };
 
-  console.log('=== RENDER TOTALS ===');
-  console.log('Total Added in cards:', totals.totalAdded);
-  console.log('Total Removed in cards:', totals.totalRemoved);
-
   // Export to CSV
   const exportToCSV = () => {
     const headers = [
@@ -517,8 +544,8 @@ const StockSummary = () => {
       movement.shadeDetails.totalShades,
       movement.cost,
       movement.price,
-      new Date(movement.stockItem.createdAt).toLocaleDateString(),
-      new Date(movement.lastActivity).toLocaleDateString()
+      new Date(movement.createdAt).toLocaleDateString(),
+      new Date(movement.updatedAt).toLocaleDateString()
     ]);
 
     const csvContent = [headers, ...csvData]
@@ -810,11 +837,11 @@ const StockSummary = () => {
                 </th>
                 <th 
                   className="px-4 py-3 text-xs font-medium tracking-wider text-left text-gray-500 uppercase cursor-pointer md:px-6 hover:bg-gray-100"
-                  onClick={() => handleSort('lastActivity')}
+                  onClick={() => handleSort('updatedAt')}
                 >
                   <div className="flex items-center gap-1">
-                    Created
-                    {getSortIcon('lastActivity')}
+                    Last Updated
+                    {getSortIcon('updatedAt')}
                   </div>
                 </th>
                 <th className="px-4 py-3 text-xs font-medium tracking-wider text-left text-gray-500 uppercase md:px-6">
@@ -823,213 +850,215 @@ const StockSummary = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {filteredMovements.map((movement) => (
-                <>
-                  <tr key={movement.stockId} className="transition-colors hover:bg-gray-50">
-                    <td className="px-4 py-4 md:px-6">
-                      <div>
-                        <div className="font-medium text-gray-900">{movement.product}</div>
-                        <div className="font-mono text-sm text-gray-500">{movement.stockId}</div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-4 md:px-6 whitespace-nowrap">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        movement.category === "Fabric" 
-                          ? "bg-purple-100 text-purple-800" 
-                          : movement.category === "Accessory"
-                          ? "bg-blue-100 text-blue-800"
-                          : "bg-green-100 text-green-800"
-                      }`}>
-                        {movement.category}
-                      </span>
-                    </td>
-                    <td className="px-4 py-4 md:px-6 whitespace-nowrap">
-                      <div className="text-lg font-semibold text-gray-900">
-                        {movement.currentStock}
-                      </div>
-                      {movement.category === "Fabric" && movement.hasShades && (
-                        <div className="text-xs text-gray-500">
-                          from {movement.shadeDetails.totalShades} shades
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-4 py-4 md:px-6">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2 text-sm">
-                          <span className="font-medium text-green-600">+{movement.totalAdded}</span>
-                          <span className="text-gray-300">|</span>
-                          <span className="font-medium text-red-600">-{movement.totalRemoved}</span>
-                        </div>
-                        {movement.quantityChanges.length > 0 && (
-                          <button
-                            onClick={() => toggleShadeDetails(movement.stockId)}
-                            className="text-xs font-medium text-blue-600 hover:text-blue-800"
-                          >
-                            {expandedStock === movement.stockId ? 'Hide' : 'Show'} details
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-4 md:px-6">
-                      <div className="flex items-center gap-2">
-                        {movement.hasShades ? (
-                          <div className="flex items-center gap-1">
-                            <FiDroplet className="text-purple-500" size={14} />
-                            <span className="text-sm text-gray-600">
-                              {movement.shadeDetails.totalShades} colors
-                            </span>
-                            <button
-                              onClick={() => toggleShadeDetails(movement.stockId)}
-                              className="ml-2 text-xs text-blue-600 hover:text-blue-800"
-                            >
-                              {expandedStock === movement.stockId ? '▲' : '▼'}
-                            </button>
-                          </div>
-                        ) : (
-                          <span className="text-sm text-gray-400">No shades</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-4 md:px-6 whitespace-nowrap">
-                      <div className="text-sm text-gray-600">
-                        {formatDate(movement.stockItem.createdAt)}
-                      </div>
-                    </td>
-                    <td className="px-4 py-4 text-sm md:px-6 whitespace-nowrap">
-                      <button
-                        onClick={() => viewStockHistory(movement.stockItem)}
-                        className="flex items-center gap-1 px-3 py-1 text-blue-600 transition-colors rounded-md hover:text-blue-800 hover:bg-blue-50"
-                      >
-                        <FiEye size={14} />
-                        View History
-                      </button>
-                    </td>
-                  </tr>
-                  
-                  {/* Expanded Details Row - Show both quantity changes and shade details */}
-                  {expandedStock === movement.stockId && (
-                    <tr className="bg-gray-50">
-                      <td colSpan={7} className="px-4 py-4 md:px-6">
-                        <div className="grid gap-4 md:grid-cols-2">
-                          {/* Quantity Changes Section */}
-                          <div className="p-4 bg-white border border-gray-200 rounded-lg">
-                            <div className="flex items-center justify-between mb-3">
-                              <h4 className="font-medium text-gray-900">Quantity Change History</h4>
-                              <div className="text-sm text-gray-500">
-                                Total Changes: {movement.quantityChanges.length}
-                              </div>
-                            </div>
-                            
-                            {movement.quantityChanges.length > 0 ? (
-                              <div className="space-y-3 max-h-60 overflow-y-auto">
-                                {movement.quantityChanges.map((change, index) => (
-                                  <div key={index} className="flex items-center justify-between p-3 border rounded-lg bg-gray-50">
-                                    <div className="flex items-center gap-4">
-                                      <div className={`w-3 h-3 rounded-full ${
-                                        change.changeType === 'increase' ? 'bg-green-500' : 'bg-red-500'
-                                      }`}></div>
-                                      <div className="flex-1">
-                                        <div className="text-sm font-medium">
-                                          {change.isShadeUpdate ? (
-                                            <span>
-                                              <span className="font-semibold">{change.shadeName}</span>: {change.oldQuantity} → {change.newQuantity} units
-                                            </span>
-                                          ) : (
-                                            <span>Stock: {change.oldQuantity} → {change.newQuantity} units</span>
-                                          )}
-                                        </div>
-                                        <div className="text-xs text-gray-500">
-                                          <span className={`font-semibold ${
-                                            change.changeType === 'increase' ? 'text-green-600' : 'text-red-600'
-                                          }`}>
-                                            {change.changeType === 'increase' ? '+' : '-'}{change.changeAmount} units
-                                          </span> • {formatDateTime(change.performedAt)}
-                                        </div>
-                                        <div className="text-xs text-gray-400 mt-1">
-                                          {change.description}
-                                        </div>
-                                      </div>
-                                    </div>
-                                    <div className="text-right">
-                                      <div className="text-sm font-medium text-gray-700">
-                                        {change.performedBy}
-                                      </div>
-                                      <div className="text-xs text-gray-500 capitalize">
-                                        {change.action.toLowerCase()}
-                                      </div>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <div className="py-4 text-center text-gray-500">
-                                No quantity changes recorded
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Shade Details Section */}
-                          <div className="p-4 bg-white border border-gray-200 rounded-lg">
-                            <div className="flex items-center justify-between mb-3">
-                              <h4 className="font-medium text-gray-900">Current Shades</h4>
-                              <div className="text-sm text-gray-500">
-                                Total: {movement.shadeDetails.totalShades}
-                              </div>
-                            </div>
-                            
-                            {movement.hasShades ? (
-                              <div className="space-y-2 max-h-60 overflow-y-auto">
-                                {movement.shadeDetails.shadeQuantities.map((shade, index) => (
-                                  <div key={index} className="flex items-center justify-between p-3 border rounded bg-gray-50">
-                                    <div className="flex items-center gap-3">
-                                      <div 
-                                        className="w-4 h-4 rounded border border-gray-300"
-                                        style={{ backgroundColor: shade.color }}
-                                        title={shade.color}
-                                      ></div>
-                                      <div>
-                                        <span className="text-sm font-medium">{shade.colorName}</span>
-                                        {(shade.netChange ?? 0) !== 0 && (
-                                          <div className={`text-xs ${(shade.netChange ?? 0) > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                            {(shade.netChange ?? 0) > 0 ? '+' : ''}{shade.netChange ?? 0} net change
-                                          </div>
-                                        )}
-                                      </div>
-                                    </div>
-                                    <div className="text-right">
-                                      <div className="text-sm font-semibold text-gray-700">
-                                        {shade.quantity} units
-                                      </div>
-                                      <div className="text-xs text-gray-500">
-                                        Current stock
-                                      </div>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <div className="py-4 text-center text-gray-500">
-                                No shades available
-                              </div>
-                            )}
-                          </div>
+              {filteredMovements.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-12 text-center md:px-6">
+                    <FiFilter className="mx-auto mb-3 text-gray-400" size={32} />
+                    <p className="text-gray-500">No stock items found</p>
+                    <p className="mt-1 text-sm text-gray-400">Try adjusting your search or filters</p>
+                  </td>
+                </tr>
+              ) : (
+                filteredMovements.map((movement) => (
+                  <>
+                    <tr key={movement.stockId} className="transition-colors hover:bg-gray-50">
+                      <td className="px-4 py-4 md:px-6">
+                        <div>
+                          <div className="font-medium text-gray-900">{movement.product}</div>
+                          <div className="font-mono text-sm text-gray-500">{movement.stockId}</div>
                         </div>
                       </td>
+                      <td className="px-4 py-4 md:px-6 whitespace-nowrap">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          movement.category === "Fabric" 
+                            ? "bg-purple-100 text-purple-800" 
+                            : movement.category === "Accessory"
+                            ? "bg-blue-100 text-blue-800"
+                            : "bg-green-100 text-green-800"
+                        }`}>
+                          {movement.category}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 md:px-6 whitespace-nowrap">
+                        <div className="text-lg font-semibold text-gray-900">
+                          {movement.currentStock}
+                        </div>
+                        {movement.category === "Fabric" && movement.hasShades && (
+                          <div className="text-xs text-gray-500">
+                            from {movement.shadeDetails.totalShades} shades
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-4 md:px-6">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 text-sm">
+                            <span className="font-medium text-green-600">+{movement.totalAdded}</span>
+                            <span className="text-gray-300">|</span>
+                            <span className="font-medium text-red-600">-{movement.totalRemoved}</span>
+                          </div>
+                          {movement.quantityChanges.length > 0 && (
+                            <button
+                              onClick={() => toggleShadeDetails(movement.stockId)}
+                              className="text-xs font-medium text-blue-600 hover:text-blue-800"
+                            >
+                              {expandedStock === movement.stockId ? 'Hide' : 'Show'} details
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 md:px-6">
+                        <div className="flex items-center gap-2">
+                          {movement.hasShades ? (
+                            <div className="flex items-center gap-1">
+                              <FiDroplet className="text-purple-500" size={14} />
+                              <span className="text-sm text-gray-600">
+                                {movement.shadeDetails.totalShades} colors
+                              </span>
+                              <button
+                                onClick={() => toggleShadeDetails(movement.stockId)}
+                                className="ml-2 text-xs text-blue-600 hover:text-blue-800"
+                              >
+                                {expandedStock === movement.stockId ? '▲' : '▼'}
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-sm text-gray-400">No shades</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 md:px-6 whitespace-nowrap">
+                        <div className="text-sm text-gray-600">
+                          {formatDate(movement.updatedAt)}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 text-sm md:px-6 whitespace-nowrap">
+                        <button
+                          onClick={() => viewStockHistory(movement.stockItem)}
+                          className="flex items-center gap-1 px-3 py-1 text-blue-600 transition-colors rounded-md hover:text-blue-800 hover:bg-blue-50"
+                        >
+                          <FiEye size={14} />
+                          View History
+                        </button>
+                      </td>
                     </tr>
-                  )}
-                </>
-              ))}
+                    
+                    {/* Expanded Details Row - Show both quantity changes and shade details */}
+                    {expandedStock === movement.stockId && (
+                      <tr className="bg-gray-50">
+                        <td colSpan={7} className="px-4 py-4 md:px-6">
+                          <div className="grid gap-4 md:grid-cols-2">
+                            {/* Quantity Changes Section */}
+                            <div className="p-4 bg-white border border-gray-200 rounded-lg">
+                              <div className="flex items-center justify-between mb-3">
+                                <h4 className="font-medium text-gray-900">Quantity Change History</h4>
+                                <div className="text-sm text-gray-500">
+                                  Total Changes: {movement.quantityChanges.length}
+                                </div>
+                              </div>
+                              
+                              {movement.quantityChanges.length > 0 ? (
+                                <div className="space-y-3 max-h-60 overflow-y-auto">
+                                  {movement.quantityChanges.map((change, index) => (
+                                    <div key={index} className="flex items-center justify-between p-3 border rounded-lg bg-gray-50">
+                                      <div className="flex items-center gap-4">
+                                        <div className={`w-3 h-3 rounded-full ${
+                                          change.changeType === 'increase' ? 'bg-green-500' : 'bg-red-500'
+                                        }`}></div>
+                                        <div className="flex-1">
+                                          <div className="text-sm font-medium">
+                                            {change.isShadeUpdate ? (
+                                              <span>
+                                                <span className="font-semibold">{change.shadeName}</span>: {change.oldQuantity} → {change.newQuantity} units
+                                              </span>
+                                            ) : (
+                                              <span>Stock: {change.oldQuantity} → {change.newQuantity} units</span>
+                                            )}
+                                          </div>
+                                          <div className="text-xs text-gray-500">
+                                            <span className={`font-semibold ${
+                                              change.changeType === 'increase' ? 'text-green-600' : 'text-red-600'
+                                            }`}>
+                                              {change.changeType === 'increase' ? '+' : '-'}{change.changeAmount} units
+                                            </span> • {formatDateTime(change.performedAt)}
+                                          </div>
+                                          <div className="text-xs text-gray-400 mt-1">
+                                            {change.description}
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <div className="text-right">
+                                        <div className="text-sm font-medium text-gray-700">
+                                          {change.performedBy}
+                                        </div>
+                                        <div className="text-xs text-gray-500 capitalize">
+                                          {change.action.toLowerCase()}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="py-4 text-center text-gray-500">
+                                  No quantity changes recorded
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Shade Details Section */}
+                            <div className="p-4 bg-white border border-gray-200 rounded-lg">
+                              <div className="flex items-center justify-between mb-3">
+                                <h4 className="font-medium text-gray-900">Current Shades</h4>
+                                <div className="text-sm text-gray-500">
+                                  Total: {movement.shadeDetails.totalShades}
+                                </div>
+                              </div>
+                              
+                              {movement.hasShades ? (
+                                <div className="space-y-2 max-h-60 overflow-y-auto">
+                                  {movement.shadeDetails.shadeQuantities.map((shade, index) => (
+                                    <div key={index} className="flex items-center justify-between p-3 border rounded bg-gray-50">
+                                      <div className="flex items-center gap-3">
+                                        <div 
+                                          className="w-4 h-4 rounded border border-gray-300"
+                                          style={{ backgroundColor: shade.color }}
+                                          title={shade.color}
+                                        ></div>
+                                        <div>
+                                          <span className="text-sm font-medium">{shade.colorName}</span>
+                                          {shade.netChange !== 0 && (
+                                            <div className={`text-xs ${shade.netChange > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                              {shade.netChange > 0 ? '+' : ''}{shade.netChange} net change
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                      <div className="text-right">
+                                        <div className="text-sm font-semibold text-gray-700">
+                                          {shade.quantity} units
+                                        </div>
+                                        <div className="text-xs text-gray-500">
+                                          Current stock
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="py-4 text-center text-gray-500">
+                                  No shades available
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </>
+                ))
+              )}
             </tbody>
           </table>
         </div>
-
-        {filteredMovements.length === 0 && (
-          <div className="py-12 text-center">
-            <FiFilter className="mx-auto mb-3 text-gray-400" size={32} />
-            <p className="text-gray-500">No stock items found matching your filters</p>
-            <p className="mt-1 text-sm text-gray-400">Try adjusting your search or filters</p>
-          </div>
-        )}
       </div>
 
       {/* Summary Footer */}

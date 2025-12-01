@@ -156,7 +156,7 @@ const StockDetails: React.FC<StockDetailsProps> = ({
             </div>
           </div>
           
-          {stock.imagePath && (
+          {/* {stock.imagePath && (
             <div className="flex justify-center">
               <img
                 src={stock.imagePath}
@@ -164,7 +164,7 @@ const StockDetails: React.FC<StockDetailsProps> = ({
                 className="object-cover w-48 h-48 border rounded-lg"
               />
             </div>
-          )}
+          )} */}
         </div>
 
         {/* Shades Section */}

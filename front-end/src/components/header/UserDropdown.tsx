@@ -49,6 +49,7 @@ export default function UserDropdown() {
 
   const userColor = getRandomColor(user?.username);
   const userInitial = getFirstLetter(user?.username);
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
   return (
     <div className="relative">
@@ -58,7 +59,10 @@ export default function UserDropdown() {
       >
         <span className="mr-3 overflow-hidden rounded-full h-11 w-11">
           {user?.imagePath ? (
-            <img src={user.imagePath} className="w-full h-full object-cover" />
+            <img 
+              src={`${API_URL}${user.imagePath}`}
+            
+            className="w-full h-full object-cover" />
           ) : (
             <div className={`w-full h-full flex items-center justify-center text-white font-semibold text-lg ${userColor}`}>
               {userInitial}

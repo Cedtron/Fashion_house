@@ -511,7 +511,8 @@ export default function Users() {
                         }`}>
                         {user.imagePath ? (
                           <img
-                            src={user.imagePath}
+                            
+                             src={user.imagePath.startsWith('http') ? user.imagePath : `${api.defaults.baseURL}${user.imagePath}`}
                             alt={user.username}
                             className="object-cover w-10 h-10 rounded-full"
                           />
