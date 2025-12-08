@@ -38,8 +38,11 @@ export default function SignInForm() {
       }
 
       navigate("/app");
-    } catch (err: any) {
-      setError(err?.response?.data?.message || err.message || "Login failed");
+    } catch (err: unknown) {
+      const message =
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+        (err instanceof Error ? err.message : "Login failed");
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -47,70 +50,76 @@ export default function SignInForm() {
 
   return (
     <div className="flex flex-col flex-1">
-      <div className="w-full max-w-md pt-10 mx-auto">
-        <div className="mt-6 bg-white dark:bg-transparent rounded-xl p-6">
-          <h2 className="text-2xl font-semibold">Welcome back</h2>
-          <p className="mt-2 text-sm text-slate-400">Sign in to manage your store</p>
+      <div className="grid items-center w-full gap-10 mx-auto lg:grid-cols-2 max-w-6xl py-10">
+        
 
-          <form className="mt-6" onSubmit={submit}>
-            <div className="space-y-4">
-              {/* Email */}
+        <div className="w-full max-w-md mx-auto bg-white/80 backdrop-blur rounded-2xl shadow-xl p-8">
+          <div>
+            <div className="mb-5">
+              <p className="text-xs font-semibold tracking-[0.3em] text-coffee-500">WELCOME BACK</p>
+              <h2 className="mt-2 text-3xl font-semibold text-coffee-800">Fashion hoouse</h2>
+           
+            </div>
+
+            <form className="space-y-4" onSubmit={submit}>
               <div>
                 <Label>Email</Label>
                 <Input
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="Email"
+                  placeholder="designer@fashionhouse.com"
                 />
               </div>
 
-              {/* Password with Eye Toggle */}
               <div className="relative">
                 <Label>Password</Label>
                 <Input
                   type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Password"
+                  placeholder="••••••••"
                 />
-
-                {/* Eye Button */}
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-9 text-slate-500 hover:text-slate-700"
+                  className="absolute right-3 top-9 text-gray-500 hover:text-gray-700"
                 >
                   {showPassword ? <FaEyeSlash /> : <FaEye />}
                 </button>
               </div>
-            </div>
 
-            {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
+              {error && <p className="text-sm text-red-500">{error}</p>}
 
-            <div className="mt-6 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Checkbox checked={isChecked} onChange={(v) => setIsChecked(v)} />
-                <div className="text-sm">Remember me</div>
-              </div>
-
-              <div>
-                <Link to="/forgot-password" className="text-sm text-brand-500 hover:text-brand-600 dark:text-brand-400">
+              <div className="flex items-center justify-between pt-2">
+                <div className="flex items-center gap-3">
+                  <Checkbox checked={isChecked} onChange={(v) => setIsChecked(v)} />
+                  <div className="text-sm text-gray-600">Remember me</div>
+                </div>
+                <Link
+                  to="/forgot-password"
+                  className="text-sm font-medium text-coffee-600 hover:text-coffee-800"
+                >
                   Forgot password?
                 </Link>
               </div>
-            </div>
 
-            <div className="mt-6">
-              <Button className="w-full" size="sm" disabled={loading}>
-                {loading ? "Signing in..." : "Sign in"}
-              </Button>
-            </div>
-          </form>
+              <div className="pt-2">
+                <Button
+                  className="w-full bg-coffee-600 hover:bg-coffee-700"
+                  size="sm"
+                  disabled={loading}
+                >
+                  {loading ? "Signing in..." : "Sign In"}
+                </Button>
+              </div>
+            </form>
 
-          <div className="mt-5">
-            <p className="text-center text-sm">
-              Don&apos;t have an account? <Link to="/signup" className="text-brand-500">Sign up</Link>
-            </p>
+            <div className="mt-6 text-center text-sm text-gray-600">
+              New to Fashion House?{" "}
+              <Link to="/signup" className="font-semibold text-coffee-600 hover:text-coffee-800">
+                Create account
+              </Link>
+            </div>
           </div>
         </div>
       </div>

@@ -1,4 +1,35 @@
 const defaultTheme = require("tailwindcss/defaultTheme");
+
+const coffeePalette = {
+  25: "#FBF7F4",
+  50: "#F7EFEA",
+  100: "#EADBCB",
+  200: "#DCC3A8",
+  300: "#CFA886",
+  400: "#B9855F",
+  500: "#9C6948",
+  600: "#6F4E37",
+  700: "#563B2A",
+  800: "#3C291D",
+  900: "#261A12",
+  950: "#150E0A",
+};
+
+const goldPalette = {
+  25: "#FFFBF0",
+  50: "#FFF7DC",
+  100: "#FCEAB0",
+  200: "#F7D978",
+  300: "#F1C554",
+  400: "#E7B43F",
+  500: "#D4AF37",
+  600: "#B88F23",
+  700: "#917018",
+  800: "#5F470F",
+  900: "#362809",
+  950: "#1D1404",
+};
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
@@ -29,34 +60,12 @@ export default {
         transparent: "transparent",
         white: "#FFFFFF",
         black: "#101828",
-        brand: {
-          25: "#F2F7FF",
-          50: "#ECF3FF",
-          100: "#DDE9FF",
-          200: "#C2D6FF",
-          300: "#9CB9FF",
-          400: "#7592FF",
-          500: "#465FFF",
-          600: "#3641F5",
-          700: "#2A31D8",
-          800: "#252DAE",
-          900: "#262E89",
-          950: "#161950",
-        },
-        "blue-light": {
-          25: "#F5FBFF",
-          50: "#F0F9FF",
-          100: "#E0F2FE",
-          200: "#B9E6FE",
-          300: "#7CD4FD",
-          400: "#36BFFA",
-          500: "#0BA5EC",
-          600: "#0086C9",
-          700: "#026AA2",
-          800: "#065986",
-          900: "#0B4A6F",
-          950: "#062C41",
-        },
+        brand: coffeePalette,
+        coffee: coffeePalette,
+        gold: goldPalette,
+        blue: coffeePalette,
+        amber: goldPalette,
+        "blue-light": goldPalette,
         gray: {
           dark: "#1A2231",
           25: "#FCFCFD",
@@ -147,7 +156,7 @@ export default {
         "theme-xl":
           "0px 20px 24px -4px rgba(16, 24, 40, 0.08), 0px 8px 8px -4px rgba(16, 24, 40, 0.03)",
         datepicker: "-5px 0 0 #262d3c, 5px 0 0 #262d3c",
-        "focus-ring": "0px 0px 0px 4px rgba(70, 95, 255, 0.12)",
+        "focus-ring": "0px 0px 0px 4px rgba(111, 78, 55, 0.12)",
         "slider-navigation":
           "0px 1px 2px 0px rgba(16, 24, 40, 0.10), 0px 1px 3px 0px rgba(16, 24, 40, 0.10)",
         tooltip:

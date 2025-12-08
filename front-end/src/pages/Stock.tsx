@@ -251,21 +251,6 @@ export default function StockPage() {
     }
   };
 
-  const searchByImage = async (filename: string) => {
-    if (!filename) return;
-    setLoading(true);
-    try {
-      const response = await api.get(`/stock/search-by-image?filename=${encodeURIComponent(filename)}`);
-      setStocks(response.data);
-      toast.info(`Found ${response.data.length} items with images matching '${filename}'`);
-    } catch (error: any) {
-      console.error('Error searching by image:', error);
-      toast.error('Image search failed');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   // Function to get color name from hex value - use color code if not found
   const getColorName = (hexColor: string): string => {
     const normalizedHex = hexColor.toLowerCase();
@@ -474,21 +459,21 @@ export default function StockPage() {
           console.log(`[onSubmit] Uploading image for stock ${savedStock.id}`, imageFile);
           const fd = new FormData();
           fd.append('image', imageFile);
-          
+
           // Don't set Content-Type header; let axios/browser set multipart boundary
           const uploadRes = await api.post(`/stock/${savedStock.id}/image`, fd, {
             headers: {
               // Remove Content-Type - browser will set it with correct boundary
             },
           });
-          
+
           console.log('[onSubmit] Image upload response:', uploadRes.data);
-          
+
           // update preview if available
           if (uploadRes.data?.imagePath) {
             setPreview(uploadRes.data.imagePath.startsWith('http') ? uploadRes.data.imagePath : `${api.defaults.baseURL}${uploadRes.data.imagePath}`);
           }
-          
+
           toast.success('Image uploaded successfully!');
         } catch (uploadErr: any) {
           console.error('Image upload failed:', uploadErr);
@@ -525,6 +510,8 @@ export default function StockPage() {
       setLoading(false);
     }
   };
+
+
 
   // Close modal function
   const closeModal = () => {
@@ -588,8 +575,8 @@ export default function StockPage() {
 
       <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03]">
         {/* Username display for tracking */}
-        <div className="p-3 mb-4 rounded-lg bg-blue-50 dark:bg-blue-900/20">
-          <p className="text-sm text-blue-700 dark:text-blue-300">
+        <div className="p-3 mb-4 rounded-lg bg-gold-50 dark:bg-coffee-900/20">
+          <p className="text-sm text-coffee-700 dark:text-gold-300">
             Current User: <strong>{username}</strong>
           </p>
         </div>
@@ -600,25 +587,13 @@ export default function StockPage() {
             <input
               type="text"
               placeholder="Search product or stock ID..."
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg outline-none sm:w-64 focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white dark:border-gray-700"
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg outline-none sm:w-64 focus:ring-2 focus:ring-coffee-500 dark:bg-gray-800 dark:text-white dark:border-gray-700"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                const filename = window.prompt('Enter image filename or part of it to search (e.g. stock-123):');
-                if (filename) {
-                  searchByImage(filename.trim());
-                }
-              }}
-              className="px-3 py-2 text-sm bg-gray-100 rounded-md hover:bg-gray-200"
-              title="Search by image filename"
-            >
-              Image Search
-            </button>
             <button
               onClick={() => fetchStocks()}
               className="px-3 py-2 text-sm bg-gray-100 rounded-md hover:bg-gray-200"
@@ -629,7 +604,7 @@ export default function StockPage() {
 
             <button
               onClick={() => openModal()}
-              className="flex items-center gap-2 px-4 py-2 text-white transition-all bg-blue-600 rounded-lg hover:bg-blue-700"
+              className="flex items-center gap-2 px-4 py-2 text-white transition-all rounded-lg bg-coffee-600 hover:bg-coffee-700"
             >
               <FiPlus /> Add Stock
             </button>
@@ -638,7 +613,7 @@ export default function StockPage() {
 
         {loading ? (
           <div className="flex justify-center py-8">
-            <div className="w-8 h-8 border-b-2 border-blue-600 rounded-full animate-spin"></div>
+            <div className="w-8 h-8 border-b-2 rounded-full animate-spin border-coffee-600"></div>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -659,7 +634,7 @@ export default function StockPage() {
               <tbody>
                 {filteredStocks.map((item) => (
                   <tr key={item.id} className="border-t hover:bg-gray-50 dark:hover:bg-gray-800/50 dark:border-gray-700">
-                    <td className="p-3 font-mono font-semibold text-blue-600">
+                    <td className="p-3 font-mono font-semibold text-coffee-600">
                       {item.stockId}
                     </td>
                     <td className="p-3">
@@ -714,7 +689,7 @@ export default function StockPage() {
                       </button>
                       <button
                         onClick={() => openModal(item)}
-                        className="p-1 text-blue-500 rounded hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/30"
+                        className="p-1 text-coffee-500 rounded hover:text-coffee-700 hover:bg-gold-50 dark:hover:bg-coffee-900/30"
                         title="Edit"
                       >
                         <FiEdit />
@@ -755,7 +730,7 @@ export default function StockPage() {
                   <input
                     {...register("product", { required: "Product name is required" })}
                     placeholder="Enter product name (e.g., Cotton Fabric, Silk Material)"
-                    className="w-full px-3 py-2 border rounded-md outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white dark:border-gray-600"
+                    className="w-full px-3 py-2 border rounded-md outline-none focus:ring-2 focus:ring-coffee-500 dark:bg-gray-700 dark:text-white dark:border-gray-600"
                   />
                   <p className="mt-1 text-xs text-gray-500">Name of the product or material</p>
                 </div>
@@ -784,7 +759,7 @@ export default function StockPage() {
                       }}
                       className="sr-only peer"
                     />
-                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 dark:peer-focus:ring-blue-400 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-coffee-500 dark:peer-focus:ring-coffee-400 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-coffee-600"></div>
                   </label>
                 </div>
 
@@ -793,7 +768,7 @@ export default function StockPage() {
                   <div>
                     <select
                       {...register("category", { required: "Category is required" })}
-                      className="w-full px-3 py-2 border rounded-md outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white dark:border-gray-600"
+                      className="w-full px-3 py-2 border rounded-md outline-none focus:ring-2 focus:ring-coffee-500 dark:bg-gray-700 dark:text-white dark:border-gray-600"
                     >
                       <option value="">Select Category</option>
                       {categories.map((category) => (
@@ -817,7 +792,7 @@ export default function StockPage() {
                       type="number"
                       step="0.01"
                       placeholder={watchedCategory === "Fabric" ? "Auto-calculated from shades" : "Enter quantity"}
-                      className={`px-3 py-2 border rounded-md outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white dark:border-gray-600 ${watchedCategory === "Fabric" ? "bg-gray-100 dark:bg-gray-600 cursor-not-allowed" : ""
+                      className={`px-3 py-2 border rounded-md outline-none focus:ring-2 focus:ring-coffee-500 dark:bg-gray-700 dark:text-white dark:border-gray-600 ${watchedCategory === "Fabric" ? "bg-gray-100 dark:bg-gray-600 cursor-not-allowed" : ""
                         }`}
                       readOnly={watchedCategory === "Fabric"}
                     />
@@ -835,7 +810,7 @@ export default function StockPage() {
                       type="number"
                       step="0.01"
                       placeholder="0.00"
-                      className="px-3 py-2 border rounded-md outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white dark:border-gray-600"
+                      className="px-3 py-2 border rounded-md outline-none focus:ring-2 focus:ring-coffee-500 dark:bg-gray-700 dark:text-white dark:border-gray-600"
                     />
                     <p className="mt-1 text-xs text-gray-500">Cost price per unit</p>
                   </div>
@@ -849,7 +824,7 @@ export default function StockPage() {
                       type="number"
                       step="0.01"
                       placeholder="0.00"
-                      className="px-3 py-2 border rounded-md outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white dark:border-gray-600"
+                      className="px-3 py-2 border rounded-md outline-none focus:ring-2 focus:ring-coffee-500 dark:bg-gray-700 dark:text-white dark:border-gray-600"
                     />
                     <p className="mt-1 text-xs text-gray-500">Selling price per unit</p>
                   </div>
@@ -863,7 +838,7 @@ export default function StockPage() {
                       type="file"
                       accept="image/*"
                       onChange={handleImageChange}
-                      className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-blue-900 dark:file:text-blue-300"
+                      className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gold-50 file:text-coffee-700 hover:file:bg-gold-100 dark:file:bg-coffee-900 dark:file:text-gold-300"
                     />
                     {preview && watchedCategory === "Fabric" && (
                       <>
@@ -1007,7 +982,7 @@ export default function StockPage() {
                             lengthUnit: "Yards",
                           })
                         }
-                        className="flex items-center gap-1 px-3 py-1 text-sm text-blue-600 rounded-lg hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 bg-blue-50 dark:bg-blue-900/30"
+                        className="flex items-center gap-1 px-3 py-1 text-sm rounded-lg text-coffee-600 hover:text-coffee-800 dark:text-gold-300 dark:hover:text-gold-200 bg-gold-50 dark:bg-gold-900/30"
                       >
                         <FiPlus /> Add Shade
                       </button>
@@ -1156,7 +1131,7 @@ export default function StockPage() {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="px-4 py-2 text-white transition-colors bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="px-4 py-2 text-white transition-colors rounded-md bg-coffee-600 hover:bg-coffee-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {loading ? "Saving..." : editItem ? "Update Stock" : "Add Stock"}
                   </button>
@@ -1188,7 +1163,7 @@ export default function StockPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="text-sm font-medium text-gray-600 dark:text-gray-400">Stock ID</label>
-                    <p className="font-mono text-lg font-semibold text-blue-600">{selectedStock.stockId}</p>
+                    <p className="font-mono text-lg font-semibold text-coffee-600">{selectedStock.stockId}</p>
                   </div>
                   <div>
                     <label className="text-sm font-medium text-gray-600 dark:text-gray-400">Product Name</label>
@@ -1263,7 +1238,7 @@ export default function StockPage() {
                 <div className="flex justify-end pt-4 border-t dark:border-gray-700">
                   <button
                     onClick={closeModal}
-                    className="px-4 py-2 text-white transition-colors bg-blue-600 rounded-md hover:bg-blue-700"
+                    className="px-4 py-2 text-white transition-colors rounded-md bg-coffee-600 hover:bg-coffee-700"
                   >
                     Close
                   </button>

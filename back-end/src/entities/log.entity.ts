@@ -28,6 +28,26 @@ export class Log {
   userId: string;
 
   @ApiProperty({ required: false })
+  @Column({ length: 150, nullable: true })
+  username: string;
+
+  @ApiProperty({ required: false })
+  @Column({ length: 10, nullable: true })
+  method: string;
+
+  @ApiProperty({ required: false })
+  @Column({ length: 255, nullable: true })
+  path: string;
+
+  @ApiProperty({ required: false })
+  @Column({ type: 'int', nullable: true })
+  statusCode: number;
+
+  @ApiProperty({ required: false })
+  @Column({ type: 'json', nullable: true })
+  payload: any;
+
+  @ApiProperty({ required: false })
   @Column({ length: 255, nullable: true })
   ipAddress: string;
 

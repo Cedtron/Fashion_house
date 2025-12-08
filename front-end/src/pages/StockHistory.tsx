@@ -24,6 +24,7 @@ import {
   FiActivity
 } from "react-icons/fi";
 import api from '../utils/axios';
+import PageLoader from "../components/common/PageLoader";
 
 interface StockTracking {
   id: number;
@@ -150,8 +151,7 @@ const StockHistory = () => {
 
   useEffect(() => {
     if (id) {
-      fetchStockHistory();
-      fetchShades();
+      fetchActivitySummary();
     }
   }, [id]);
 
@@ -164,31 +164,53 @@ const StockHistory = () => {
     }
   }, [tracking, analyticsPeriod, shades]);
 
-  const fetchStockHistory = async () => {
+  const fetchActivitySummary = async () => {
     setLoading(true);
     setError(null);
     try {
-      const [stockRes, trackingRes] = await Promise.all([
-        api.get(`/stock/${id}`),
-        api.get(`/stock/${id}/tracking`)
-      ]);
-      
-      setStock(stockRes.data);
-      setTracking(trackingRes.data || []);
+      const response = await api.get(`/stock/${id}/activity-summary`);
+      const payload = response.data || {};
+      if (payload.stock) {
+        setStock(payload.stock);
+        setShades(payload.stock.shades || []);
+      }
+      if (Array.isArray(payload.tracking)) {
+        setTracking(payload.tracking);
+      }
+      if (payload.summary) {
+        setSummaryStats((prev) => ({
+          ...prev,
+          totalActivities: payload.summary.totalActivities ?? prev?.totalActivities ?? 0,
+          created: payload.summary.created ?? 0,
+          updated: payload.summary.updated ?? 0,
+          adjusted: payload.summary.adjusted ?? 0,
+          deleted: payload.summary.deleted ?? 0,
+          imageUploads: payload.summary.imageUploads ?? 0,
+          totalShades: payload.summary.totalShades ?? 0,
+          totalShadeQuantity: payload.summary.totalShadeQuantity ?? 0,
+          totalShadeLength: payload.summary.totalShadeLength ?? 0,
+        }));
+      }
+      if (Array.isArray(payload.shadeAnalytics)) {
+        setShadeAnalytics(payload.shadeAnalytics);
+      }
+      if (Array.isArray(payload.activityByPeriod)) {
+        setAnalyticsData(
+          payload.activityByPeriod.map((entry: any) => ({
+            period: entry.period,
+            stockAdded: entry.stockAdded,
+            stockReduced: entry.stockReduced,
+            shadesAdded: entry.shadesAdded,
+            shadesRemoved: entry.shadesRemoved,
+            activities: entry.activities,
+          })),
+        );
+      }
     } catch (err: any) {
       console.error('Error fetching stock history:', err);
       setError('Failed to load stock history');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const fetchShades = async () => {
-    try {
-      const response = await api.get(`/shades?stockId=${id}`);
-      setShades(response.data || []);
-    } catch (err: any) {
-      console.error('Error fetching shades:', err);
     }
   };
 
@@ -540,9 +562,9 @@ const StockHistory = () => {
       case 'UPDATE':
         return { 
           icon: FiEdit, 
-          color: 'text-blue-600 bg-blue-100 border-blue-200',
+          color: 'text-coffee-600 bg-coffee-50 border-coffee-200',
           label: 'Updated',
-          badgeColor: 'bg-blue-500'
+          badgeColor: 'bg-coffee-500'
         };
       case 'ADJUST':
         return { 
@@ -726,11 +748,11 @@ const StockHistory = () => {
           </div>
           <div className="text-sm font-medium text-green-600">Total Additions</div>
         </div>
-        <div className="p-4 border border-blue-200 rounded-lg bg-blue-50">
-          <div className="text-2xl font-bold text-blue-600">
+        <div className="p-4 border border-coffee-200 rounded-lg bg-coffee-50">
+          <div className="text-2xl font-bold text-coffee-600">
             {shadeAnalytics.reduce((sum, shade) => sum + shade.totalReductions, 0)}
           </div>
-          <div className="text-sm font-medium text-blue-600">Total Qty Reduced</div>
+          <div className="text-sm font-medium text-coffee-600">Total Qty Reduced</div>
         </div>
         <div className="p-4 border border-orange-200 rounded-lg bg-orange-50">
           <div className="text-2xl font-bold text-orange-600">
@@ -816,7 +838,7 @@ const StockHistory = () => {
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <span className="font-medium text-blue-600">
+                    <span className="font-medium text-coffee-600">
                       {shade.currentQuantity} {shade.unit}
                     </span>
                   </td>
@@ -936,9 +958,9 @@ const StockHistory = () => {
             <div className="text-2xl font-bold text-green-600">{summaryStats.totalShadeQuantity}</div>
             <div className="text-sm font-medium text-green-600">Total Quantity</div>
           </div>
-          <div className="p-4 border border-blue-200 rounded-lg bg-blue-50">
-            <div className="text-2xl font-bold text-blue-600">{summaryStats.totalShadeLength}</div>
-            <div className="text-sm font-medium text-blue-600">Total Length</div>
+          <div className="p-4 border border-coffee-200 rounded-lg bg-coffee-50">
+            <div className="text-2xl font-bold text-coffee-600">{summaryStats.totalShadeLength}</div>
+            <div className="text-sm font-medium text-coffee-600">Total Length</div>
           </div>
         </div>
       )}
@@ -952,7 +974,7 @@ const StockHistory = () => {
         <select 
           value={analyticsPeriod}
           onChange={(e) => setAnalyticsPeriod(e.target.value as any)}
-          className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-coffee-500 focus:border-coffee-500"
         >
           <option value="day">Daily</option>
           <option value="week">Weekly</option>
@@ -962,12 +984,12 @@ const StockHistory = () => {
       </div>
 
       <div className="grid grid-cols-1 gap-6 mb-6 lg:grid-cols-2">
-        <div className="p-6 border border-blue-200 rounded-lg bg-gradient-to-br from-blue-50 to-blue-100">
+        <div className="p-6 border border-coffee-200 rounded-lg bg-gradient-to-br from-coffee-50 to-coffee-100">
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 bg-blue-600 rounded-lg">
+            <div className="p-2 rounded-lg bg-coffee-600">
               <FiPackage className="text-white" size={20} />
             </div>
-            <h3 className="text-lg font-semibold text-blue-900">Stock Changes</h3>
+            <h3 className="text-lg font-semibold text-coffee-900">Stock Changes</h3>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="text-center">
@@ -1026,7 +1048,7 @@ const StockHistory = () => {
               <tr key={index} className="hover:bg-gray-50">
                 <td className="px-4 py-3 font-medium text-gray-800">{data.period}</td>
                 <td className="px-4 py-3 text-gray-600">
-                  <span className="px-2 py-1 text-xs font-medium text-blue-800 bg-blue-100 rounded-full">
+                  <span className="px-2 py-1 text-xs font-medium text-coffee-800 bg-coffee-50 rounded-full">
                     {data.activities}
                   </span>
                 </td>
@@ -1072,9 +1094,9 @@ const StockHistory = () => {
   const renderSummaryCard = () => (
     <div className="p-6 bg-white border border-gray-200 rounded-lg">
       <div className="grid grid-cols-2 gap-4 mb-6 md:grid-cols-4 lg:grid-cols-5">
-        <div className="p-4 border border-blue-200 rounded-lg bg-blue-50">
-          <div className="text-2xl font-bold text-blue-600">{summaryStats?.totalActivities || 0}</div>
-          <div className="text-sm font-medium text-blue-600">Total Activities</div>
+        <div className="p-4 border border-coffee-200 rounded-lg bg-coffee-50">
+          <div className="text-2xl font-bold text-coffee-600">{summaryStats?.totalActivities || 0}</div>
+          <div className="text-sm font-medium text-coffee-600">Total Activities</div>
         </div>
         <div className="p-4 border border-green-200 rounded-lg bg-green-50">
           <div className="text-2xl font-bold text-green-600">{summaryStats?.created || 0}</div>
@@ -1183,7 +1205,7 @@ const StockHistory = () => {
                   onClick={() => setCurrentPage(pageNum)}
                   className={`px-3 py-1 rounded-lg text-sm ${
                     currentPage === pageNum 
-                      ? 'bg-blue-600 text-white' 
+                      ? 'bg-coffee-600 text-white' 
                       : 'border border-gray-300 text-gray-600 hover:bg-gray-50'
                   }`}
                 >
@@ -1299,7 +1321,7 @@ const StockHistory = () => {
                   onClick={() => setCurrentPage(pageNum)}
                   className={`px-3 py-1 rounded-lg text-sm ${
                     currentPage === pageNum 
-                      ? 'bg-blue-600 text-white' 
+                      ? 'bg-coffee-600 text-white' 
                       : 'border border-gray-300 text-gray-600 hover:bg-gray-50'
                   }`}
                 >
@@ -1322,11 +1344,8 @@ const StockHistory = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
-        <div className="text-center">
-          <div className="w-16 h-16 mx-auto mb-4 border-4 border-blue-600 rounded-full border-t-transparent animate-spin"></div>
-          <p className="text-gray-600">Loading stock history...</p>
-        </div>
+      <div className="min-h-screen bg-gray-50">
+        <PageLoader label="Loading stock history..." />
       </div>
     );
   }
@@ -1339,7 +1358,7 @@ const StockHistory = () => {
           <p className="mb-4 text-gray-600">{error || 'Stock not found'}</p>
           <button
             onClick={() => navigate('/stock-reports')}
-            className="flex items-center gap-2 px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+            className="flex items-center gap-2 px-4 py-2 text-white rounded-lg bg-coffee-600 hover:bg-coffee-700"
           >
             <FiArrowLeft size={16} />
             Back to Stock Summary
@@ -1354,7 +1373,7 @@ const StockHistory = () => {
       <div className="mb-6">
         <button
           onClick={() => navigate('/stock-reports')}
-          className="flex items-center gap-2 mb-4 text-blue-600 hover:text-blue-800"
+              className="flex items-center gap-2 mb-4 text-coffee-600 hover:text-coffee-800"
         >
           <FiArrowLeft size={16} />
           Back to Stock Summary
@@ -1406,7 +1425,7 @@ const StockHistory = () => {
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-gray-600">Total Length:</span>
-                        <span className="px-2 py-1 text-sm font-medium text-blue-800 bg-blue-100 rounded-full">
+                        <span className="px-2 py-1 text-sm font-medium text-coffee-800 bg-coffee-50 rounded-full">
                           {summaryStats.totalShadeLength} {shades[0]?.lengthUnit || 'units'}
                         </span>
                       </div>
@@ -1438,7 +1457,7 @@ const StockHistory = () => {
                   onClick={() => setActiveTab('summary')}
                   className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                     activeTab === 'summary' 
-                      ? 'bg-white text-blue-600 shadow-sm' 
+                      ? 'bg-white text-coffee-600 shadow-sm' 
                       : 'text-gray-600 hover:text-gray-800'
                   }`}
                 >
@@ -1449,7 +1468,7 @@ const StockHistory = () => {
                   onClick={() => setActiveTab('timeline')}
                   className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                     activeTab === 'timeline' 
-                      ? 'bg-white text-blue-600 shadow-sm' 
+                      ? 'bg-white text-coffee-600 shadow-sm' 
                       : 'text-gray-600 hover:text-gray-800'
                   }`}
                 >
@@ -1460,7 +1479,7 @@ const StockHistory = () => {
                   onClick={() => setActiveTab('analytics')}
                   className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                     activeTab === 'analytics' 
-                      ? 'bg-white text-blue-600 shadow-sm' 
+                      ? 'bg-white text-coffee-600 shadow-sm' 
                       : 'text-gray-600 hover:text-gray-800'
                   }`}
                 >
@@ -1500,7 +1519,7 @@ const StockHistory = () => {
                       setDateFilter(e.target.value as any);
                       setCurrentPage(1);
                     }}
-                    className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-coffee-500 focus:border-coffee-500"
                   >
                     <option value="all">All Time</option>
                     <option value="today">Today</option>

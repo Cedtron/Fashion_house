@@ -10,9 +10,6 @@ import {
   Query,
   UseInterceptors,
   UploadedFile,
-  ParseFilePipe,
-  MaxFileSizeValidator,
-  FileTypeValidator,
   Headers,
   BadRequestException,
 } from '@nestjs/common';
@@ -33,7 +30,7 @@ import { SearchStockDto } from './dto/search-stock.dto';
 import { Stock } from '../entities/stock.entity';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
-import { existsSync, mkdirSync, unlinkSync } from 'fs';
+import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'fs'; // ADD writeFileSync
 
 @ApiTags('stock')
 @Controller('stock')
@@ -68,83 +65,129 @@ export class StockController {
   // ============================================================
   // IMAGE UPLOAD
   // ============================================================
-@Post(':id/image')
-@UseInterceptors(FileInterceptor('image', {
-  storage: diskStorage({
-    destination: (req, file, cb) => {
-      const uploadPath = './uploads/stock';
-      if (!existsSync(uploadPath)) mkdirSync(uploadPath, { recursive: true });
-      cb(null, uploadPath);
-    },
-    filename: (req, file, cb) => {
-      const unique = Date.now() + '-' + Math.round(Math.random() * 1e9);
-      const ext = extname(file.originalname).toLowerCase();
-      cb(null, unique + ext);
-    },
-  }),
-}))
-async uploadImage(
-  @Param('id', ParseIntPipe) id: number,
-  @UploadedFile() file: Express.Multer.File,
-  @Headers('x-username') username?: string,
-) {
-  console.log("[UPLOAD] File =>", file);
+  @Post(':id/image')
+  @UseInterceptors(FileInterceptor('image', {
+    storage: diskStorage({
+      destination: (req, file, cb) => {
+        const uploadPath = './uploads/stock';
+        if (!existsSync(uploadPath)) mkdirSync(uploadPath, { recursive: true });
+        cb(null, uploadPath);
+      },
+      filename: (req, file, cb) => {
+        const unique = Date.now() + '-' + Math.round(Math.random() * 1e9);
+        const ext = extname(file.originalname).toLowerCase();
+        cb(null, unique + ext);
+      },
+    }),
+  }))
+  async uploadImage(
+    @Param('id', ParseIntPipe) id: number,
+    @UploadedFile() file: Express.Multer.File,
+    @Headers('x-username') username?: string,
+  ) {
+    console.log("[UPLOAD] File =>", file);
 
-  if (!file) {
-    throw new BadRequestException("No file uploaded");
-  }
+    if (!file) {
+      throw new BadRequestException("No file uploaded");
+    }
 
-  const allowedExt = ['.png', '.jpg', '.jpeg', '.webp'];
-  const ext = extname(file.originalname).toLowerCase();
+    const allowedExt = ['.png', '.jpg', '.jpeg', '.webp'];
+    const ext = extname(file.originalname).toLowerCase();
 
-  // ❌ Prevent renamed malware files
-  if (!allowedExt.includes(ext)) {
-    throw new BadRequestException(`Invalid image type. Allowed: png, jpg, jpeg, webp`);
-  }
+    if (!allowedExt.includes(ext)) {
+      throw new BadRequestException(`Invalid image type. Allowed: png, jpg, jpeg, webp`);
+    }
 
-  // ❌ Prevent empty or corrupted files
-  if (file.size < 100) {
-    throw new BadRequestException("File too small. Possibly corrupted.");
-  }
+    if (file.size < 100) {
+      throw new BadRequestException("File too small. Possibly corrupted.");
+    }
 
-  // GET CURRENT STOCK
-  const stock = await this.stockService.findOne(id);
+    const stock = await this.stockService.findOne(id);
 
-  // DELETE OLD IMAGE IF EXISTS
-  if (stock.imagePath) {
-    const oldPath = `.${stock.imagePath}`;
-    if (existsSync(oldPath)) {
-      try {
-        unlinkSync(oldPath);
-        console.log("Deleted old image:", oldPath);
-      } catch (err) {
-        console.log("Error deleting old image:", err);
+    if (stock.imagePath) {
+      const oldPath = `.${stock.imagePath}`;
+      if (existsSync(oldPath)) {
+        try {
+          unlinkSync(oldPath);
+          console.log("Deleted old image:", oldPath);
+        } catch (err) {
+          console.log("Error deleting old image:", err);
+        }
       }
     }
+
+    const imagePath = `/uploads/stock/${file.filename}`;
+
+    const updated = await this.stockService.uploadImage(id, imagePath, username || 'system');
+
+    return {
+      message: "Image uploaded successfully",
+      imagePath,
+      stock: updated,
+    };
   }
 
-  // SAVE NEW IMAGE
-  const imagePath = `/uploads/stock/${file.filename}`;
-
-  const updated = await this.stockService.uploadImage(id, imagePath, username || 'system');
-
-  return {
-    message: "Image uploaded successfully",
-    imagePath,
-    stock: updated,
-  };
-}
-
-
-
   // ============================================================
-  // SEARCH BY IMAGE FILENAME
+  // SEARCH BY IMAGE (CHANGED to searchByPhoto)
   // ============================================================
-  @Get('search-by-image')
-  @ApiOperation({ summary: 'Search stocks by image filename' })
-  @ApiQuery({ name: 'filename', required: false })
-  async searchByImage(@Query('filename') filename?: string) {
-    return await this.stockService.searchByImage(filename || '');
+  @Post('search-by-photo')
+  @UseInterceptors(
+    FileInterceptor('image', {
+      storage: diskStorage({
+        destination: (req, file, cb) => {
+          const uploadPath = './uploads/search';
+          if (!existsSync(uploadPath)) mkdirSync(uploadPath, { recursive: true });
+          cb(null, uploadPath);
+        },
+        filename: (req, file, cb) => {
+          const unique = Date.now() + '-' + Math.round(Math.random() * 1e9);
+          cb(null, unique + extname(file.originalname).toLowerCase());
+        },
+      }),
+    }),
+  )
+  async searchByPhoto(@UploadedFile() file: Express.Multer.File) {
+    if (!file) {
+      throw new BadRequestException('Image file is required');
+    }
+    const allowedExt = ['.png', '.jpg', '.jpeg', '.webp'];
+    const ext = extname(file.originalname).toLowerCase();
+    if (!allowedExt.includes(ext)) {
+      throw new BadRequestException('Unsupported image type');
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      throw new BadRequestException('Image must be less than 5MB');
+    }
+    
+    // Save the file temporarily
+    const tempPath = `./temp/${Date.now()}-${file.originalname}`;
+    
+    // Create temp directory if it doesn't exist
+    const tempDir = './temp';
+    if (!existsSync(tempDir)) {
+      mkdirSync(tempDir, { recursive: true });
+    }
+    
+    // Save file
+    writeFileSync(tempPath, file.buffer);
+    
+    // Call the service method (searchByPhoto, NOT searchByPhotoTensorFlow)
+    return this.stockService.searchByPhoto(tempPath);
+  }
+
+  @Get('alerts')
+  async getAlerts() {
+    return this.stockService.getStockAlerts();
+  }
+
+  @Get('summary/overview')
+  async getInventorySummary() {
+    return this.stockService.getInventorySummary();
+  }
+
+  @Get(':id/activity-summary')
+  async getStockActivitySummary(@Param('id', ParseIntPipe) id: number) {
+    return this.stockService.getStockActivitySummary(id);
   }
 
   // ============================================================
@@ -246,6 +289,19 @@ async uploadImage(
     @Headers('x-username') username?: string,
   ) {
     return await this.stockService.update(id, dto, username || 'system');
+  }
+
+  // ============================================================
+  // COMPLETE UPDATE (WITH SHADES) - ADD THIS!
+  // ============================================================
+  @Patch(':id/complete')
+  @ApiOperation({ summary: 'Complete stock update including shades' })
+  async completeUpdate(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateData: any,
+    @Headers('x-username') username?: string,
+  ) {
+    return await this.stockService.completeUpdate(id, updateData, username || 'system');
   }
 
   // ============================================================
