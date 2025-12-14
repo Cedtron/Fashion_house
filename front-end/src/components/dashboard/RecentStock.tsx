@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { FiPackage, FiRefreshCw, FiEye, FiEdit, FiImage } from 'react-icons/fi';
 import { FaSortAmountDown, FaSortAmountUp } from 'react-icons/fa';
+import api from '../../utils/axios';
 
 interface Stock {
   id: number;
@@ -101,8 +102,8 @@ const RecentStock: React.FC<RecentStockProps> = ({
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">
                     {stock.imagePath ? (
-                      <img
-                        src={stock.imagePath}
+                      <img                        
+                        src={stock.imagePath.startsWith('http') ? stock.imagePath : `${api.defaults.baseURL}${stock.imagePath}`} 
                         alt={stock.product}
                         className="object-cover rounded-lg w-14 h-14"
                       />

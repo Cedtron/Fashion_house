@@ -49,78 +49,95 @@ export default function SignInForm() {
   };
 
   return (
-    <div className="flex flex-col flex-1">
-      <div className="grid items-center w-full gap-10 mx-auto lg:grid-cols-2 max-w-6xl py-10">
-        
+    <div className="flex items-center justify-center flex-1 py-10 px-4">
+      <div className="w-full max-w-md p-8 bg-white/90 backdrop-blur-xl shadow-xl rounded-2xl border border-white/40">
 
-        <div className="w-full max-w-md mx-auto bg-white/80 backdrop-blur rounded-2xl shadow-xl p-8">
+        {/* Title */}
+        <div className="mb-6 text-center">
+          <p className="text-xs font-semibold tracking-[0.3em] text-coffee-500">
+            WELCOME BACK
+          </p>
+          <h2 className="mt-2 text-3xl font-bold text-coffee-800">
+            Fashion House
+          </h2>
+        </div>
+
+        {/* Form */}
+        <form className="space-y-5" onSubmit={submit}>
+          {/* Email */}
           <div>
-            <div className="mb-5">
-              <p className="text-xs font-semibold tracking-[0.3em] text-coffee-500">WELCOME BACK</p>
-              <h2 className="mt-2 text-3xl font-semibold text-coffee-800">Fashion hoouse</h2>
-           
-            </div>
-
-            <form className="space-y-4" onSubmit={submit}>
-              <div>
-                <Label>Email</Label>
-                <Input
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="designer@fashionhouse.com"
-                />
-              </div>
-
-              <div className="relative">
-                <Label>Password</Label>
-                <Input
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-9 text-gray-500 hover:text-gray-700"
-                >
-                  {showPassword ? <FaEyeSlash /> : <FaEye />}
-                </button>
-              </div>
-
-              {error && <p className="text-sm text-red-500">{error}</p>}
-
-              <div className="flex items-center justify-between pt-2">
-                <div className="flex items-center gap-3">
-                  <Checkbox checked={isChecked} onChange={(v) => setIsChecked(v)} />
-                  <div className="text-sm text-gray-600">Remember me</div>
-                </div>
-                <Link
-                  to="/forgot-password"
-                  className="text-sm font-medium text-coffee-600 hover:text-coffee-800"
-                >
-                  Forgot password?
-                </Link>
-              </div>
-
-              <div className="pt-2">
-                <Button
-                  className="w-full bg-coffee-600 hover:bg-coffee-700"
-                  size="sm"
-                  disabled={loading}
-                >
-                  {loading ? "Signing in..." : "Sign In"}
-                </Button>
-              </div>
-            </form>
-
-            <div className="mt-6 text-center text-sm text-gray-600">
-              New to Fashion House?{" "}
-              <Link to="/signup" className="font-semibold text-coffee-600 hover:text-coffee-800">
-                Create account
-              </Link>
-            </div>
+            <Label>Email</Label>
+            <Input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="designer@fashionhouse.com"
+              className="transition-all focus:ring-2 focus:ring-coffee-300"
+            />
           </div>
+
+          {/* Password */}
+          <div className="relative">
+            <Label>Password</Label>
+            <Input
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              className="transition-all focus:ring-2 focus:ring-coffee-300"
+            />
+
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute text-gray-500 right-3 top-9 hover:text-gray-700 transition"
+            >
+              {showPassword ? <FaEyeSlash /> : <FaEye />}
+            </button>
+          </div>
+
+          {/* Error */}
+          {error && (
+            <div className="p-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md">
+              {error}
+            </div>
+          )}
+
+          {/* Remember + forgot */}
+          <div className="flex items-center justify-between pt-1">
+            <div className="flex items-center gap-3">
+              <Checkbox checked={isChecked} onChange={(v) => setIsChecked(v)} />
+              <span className="text-sm text-gray-600">Remember me</span>
+            </div>
+
+            <Link
+              to="/forgot-password"
+              className="text-sm font-medium text-coffee-600 hover:text-coffee-800 transition"
+            >
+              Forgot password?
+            </Link>
+          </div>
+
+          {/* Button */}
+          <div className="pt-2">
+            <Button
+              className="w-full bg-coffee-700 hover:bg-coffee-800 shadow-md transition-all"
+              size="sm"
+              disabled={loading}
+            >
+              {loading ? "Signing in..." : "Sign In"}
+            </Button>
+          </div>
+        </form>
+
+        {/* Signup link */}
+        <div className="mt-6 text-sm text-center text-gray-700">
+          New to Fashion House?{" "}
+          <Link
+            to="/signup"
+            className="font-semibold text-coffee-600 hover:text-coffee-800 transition"
+          >
+            Create account
+          </Link>
         </div>
       </div>
     </div>

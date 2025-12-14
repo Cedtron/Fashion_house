@@ -8,7 +8,7 @@ export default function ProductsPage(){
   const [editing, setEditing] = useState<any|null>(null);
   const [showForm, setShowForm] = useState(false);
 
-  const load = async ()=>{ try{ const res = await api.get('/products'); setProducts(res.data); }catch(e){ console.error(e) } };
+  const load = async ()=>{ try{ const res = await api.get('/stock'); setProducts(res.data); }catch(e){ console.error(e) } };
   useEffect(()=>{ load(); },[]);
 
   return (<div className="p-4">

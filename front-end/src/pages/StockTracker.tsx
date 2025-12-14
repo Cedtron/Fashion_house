@@ -367,8 +367,8 @@ export default function StockReduction() {
           };
 
           // Remove metadata fields that shouldn't be sent
-          delete updatePayload.createdAt;
-          delete updatePayload.updatedAt;
+          // delete updatePayload.createdAt;
+          // delete updatePayload.updatedAt;
 
           // Use the completeUpdate endpoint
           await api.patch(`/stock/${item.stock.id}/complete`, updatePayload);
@@ -399,7 +399,7 @@ export default function StockReduction() {
   if (loading && stocks.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50">
-        <div className="w-12 h-12 border-b-2 rounded-full animate-spin border-blue-600"></div>
+        <div className="w-12 h-12 border-b-2 border-blue-600 rounded-full animate-spin"></div>
       </div>
     );
   }
@@ -460,7 +460,7 @@ export default function StockReduction() {
                         ref={videoRef}
                         autoPlay
                         playsInline
-                        className="w-full h-40 object-cover"
+                        className="object-cover w-full h-40"
                       />
                     </div>
                   )}
@@ -469,7 +469,7 @@ export default function StockReduction() {
                       <img
                         src={imagePreview}
                         alt="Selected"
-                        className="w-16 h-16 rounded object-cover"
+                        className="object-cover w-16 h-16 rounded"
                       />
                       <div>
                         <p className="text-sm font-medium">
@@ -573,13 +573,14 @@ export default function StockReduction() {
                     >
                       <div className="flex items-start justify-between">
                         <div className="flex items-start gap-3">
-                          {stock.imagePath && (
-                            <img
-                              className="w-12 h-12 rounded object-cover"
-                              src={stock.imagePath}
-                              alt={stock.product}
-                            />
-                          )}
+                      {stock.imagePath && (
+  <img
+    className="object-cover w-12 h-12 rounded"
+ 
+    src={stock.imagePath.startsWith('http') ? stock.imagePath : `${api.defaults.baseURL}${stock.imagePath}`} 
+    alt={stock.product}
+  />
+)}
                           <div className="flex-1">
                             <h3 className="font-medium text-gray-900">{stock.product}</h3>
                             <p className="text-xs text-gray-500">{stock.stockId} • {stock.category}</p>
@@ -629,7 +630,7 @@ export default function StockReduction() {
           {/* Sidebar */}
           <div className="lg:w-1/3">
             {/* Reduction Panel */}
-            <div className="sticky top-6 space-y-4">
+            <div className="sticky space-y-4 top-6">
               {/* Selected Product */}
               {selectedStock && (
                 <div className="p-4 bg-white rounded-lg shadow">
@@ -679,9 +680,9 @@ export default function StockReduction() {
                       <label className="block mb-1 text-sm">
                         Reduce Shades {isFabricProduct(selectedStock) && '(Required)'}
                       </label>
-                      <div className="space-y-2 max-h-32 overflow-y-auto">
+                      <div className="space-y-2 overflow-y-auto max-h-32">
                         {Array.from(editingShades.values()).map((item) => (
-                          <div key={item.shade.id} className="flex items-center justify-between p-2 text-sm bg-gray-50 rounded">
+                          <div key={item.shade.id} className="flex items-center justify-between p-2 text-sm rounded bg-gray-50">
                             <div className="flex items-center gap-2">
                               <div
                                 className="w-4 h-4 border rounded"
@@ -742,7 +743,7 @@ export default function StockReduction() {
                 {reductionItems.length === 0 ? (
                   <p className="py-6 text-center text-gray-500">No reduction items</p>
                 ) : (
-                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                  <div className="space-y-2 overflow-y-auto max-h-60">
                     {reductionItems.map((item, index) => (
                       <div key={index} className="p-2 text-sm border border-gray-200 rounded">
                         <div className="flex items-start justify-between">

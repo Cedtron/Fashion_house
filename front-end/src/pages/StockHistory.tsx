@@ -21,7 +21,9 @@ import {
   FiTrendingDown,
   FiDroplet,
   FiPieChart,
-  FiActivity
+  FiActivity,
+  FiChevronUp,
+  FiChevronDown
 } from "react-icons/fi";
 import api from '../utils/axios';
 import PageLoader from "../components/common/PageLoader";
@@ -94,11 +96,7 @@ interface ShadeChange {
   oldQuantity: number;
   newQuantity: number;
   quantityChange: number;
-  oldLength: number;
-  newLength: number;
-  lengthChange: number;
   unit: string;
-  lengthUnit: string;
   changeType: 'increase' | 'decrease' | 'no-change';
   performedAt: string;
   performedBy: string;
@@ -110,14 +108,14 @@ interface ShadeAnalytics {
   colorName: string;
   color: string;
   currentQuantity: number;
-  currentLength: number;
   unit: string;
-  lengthUnit: string;
   totalReductions: number;
   totalAdditions: number;
   reductionCount: number;
   additionCount: number;
   lastUpdated: string;
+  totalChanges: number;
+  netChange: number;
 }
 
 interface StockChange {
@@ -148,6 +146,7 @@ const StockHistory = () => {
   const [shadeChanges, setShadeChanges] = useState<ShadeChange[]>([]);
   const [shadeAnalytics, setShadeAnalytics] = useState<ShadeAnalytics[]>([]);
   const [stockChanges, setStockChanges] = useState<StockChange[]>([]);
+  const [hasShades, setHasShades] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -156,10 +155,14 @@ const StockHistory = () => {
   }, [id]);
 
   useEffect(() => {
-    if (tracking.length > 0) {
+    if (tracking.length > 0 && shades.length > 0) {
       calculateSummaryStats();
       calculateAnalytics();
       analyzeShadeChanges();
+      analyzeStockChanges();
+    } else if (tracking.length > 0) {
+      calculateSummaryStats();
+      calculateAnalytics();
       analyzeStockChanges();
     }
   }, [tracking, analyticsPeriod, shades]);
@@ -172,7 +175,9 @@ const StockHistory = () => {
       const payload = response.data || {};
       if (payload.stock) {
         setStock(payload.stock);
-        setShades(payload.stock.shades || []);
+        const stockShades = payload.stock.shades || [];
+        setShades(stockShades);
+        setHasShades(stockShades.length > 0);
       }
       if (Array.isArray(payload.tracking)) {
         setTracking(payload.tracking);
@@ -190,9 +195,6 @@ const StockHistory = () => {
           totalShadeQuantity: payload.summary.totalShadeQuantity ?? 0,
           totalShadeLength: payload.summary.totalShadeLength ?? 0,
         }));
-      }
-      if (Array.isArray(payload.shadeAnalytics)) {
-        setShadeAnalytics(payload.shadeAnalytics);
       }
       if (Array.isArray(payload.activityByPeriod)) {
         setAnalyticsData(
@@ -215,76 +217,56 @@ const StockHistory = () => {
   };
 
   const analyzeShadeChanges = () => {
+    if (!hasShades) return;
+    
     const changes: ShadeChange[] = [];
     
     tracking.forEach(activity => {
-      if (activity.action === 'CREATE' && activity.newData && activity.newData.colorName) {
-        const newData = activity.newData;
-        changes.push({
-          shadeId: newData.id,
-          colorName: newData.colorName,
-          color: newData.color,
-          oldQuantity: 0,
-          newQuantity: newData.quantity || 0,
-          quantityChange: newData.quantity || 0,
-          oldLength: 0,
-          newLength: newData.length || 0,
-          lengthChange: newData.length || 0,
-          unit: newData.unit || 'Units',
-          lengthUnit: newData.lengthUnit || 'Units',
-          changeType: 'increase',
-          performedAt: activity.performedAt,
-          performedBy: activity.performedBy,
-          action: 'CREATE'
-        });
-      }
-      
-      if (activity.action === 'UPDATE' && activity.oldData && activity.newData) {
-        const oldData = activity.oldData;
-        const newData = activity.newData;
+      if (activity.action === 'UPDATE' && activity.description) {
+        // Parse the description for color changes
+        const colorChanges = extractColorChanges(activity.description);
         
-        if (oldData.colorName && newData.colorName) {
-          const quantityChange = (newData.quantity || 0) - (oldData.quantity || 0);
-          const lengthChange = (newData.length || 0) - (oldData.length || 0);
-          
-          changes.push({
-            shadeId: oldData.id,
-            colorName: oldData.colorName,
-            color: oldData.color,
-            oldQuantity: oldData.quantity || 0,
-            newQuantity: newData.quantity || 0,
-            quantityChange: quantityChange,
-            oldLength: oldData.length || 0,
-            newLength: newData.length || 0,
-            lengthChange: lengthChange,
-            unit: oldData.unit || 'Units',
-            lengthUnit: oldData.lengthUnit || 'Units',
-            changeType: quantityChange > 0 ? 'increase' : quantityChange < 0 ? 'decrease' : 'no-change',
-            performedAt: activity.performedAt,
-            performedBy: activity.performedBy,
-            action: 'UPDATE'
-          });
-        }
-      }
-      
-      if (activity.action === 'DELETE' && activity.oldData && activity.oldData.colorName) {
-        const oldData = activity.oldData;
-        changes.push({
-          shadeId: oldData.id,
-          colorName: oldData.colorName,
-          color: oldData.color,
-          oldQuantity: oldData.quantity || 0,
-          newQuantity: 0,
-          quantityChange: -(oldData.quantity || 0),
-          oldLength: oldData.length || 0,
-          newLength: 0,
-          lengthChange: -(oldData.length || 0),
-          unit: oldData.unit || 'Units',
-          lengthUnit: oldData.lengthUnit || 'Units',
-          changeType: 'decrease',
-          performedAt: activity.performedAt,
-          performedBy: activity.performedBy,
-          action: 'DELETE'
+        colorChanges.forEach(change => {
+          // Find the shade by color code
+          const shade = shades.find(s => s.colorName === change.colorName || s.color === change.colorName);
+          if (shade) {
+            const quantityChange = change.change;
+            changes.push({
+              shadeId: shade.id,
+              colorName: change.colorName,
+              color: shade.color,
+              oldQuantity: change.oldQuantity,
+              newQuantity: change.newQuantity,
+              quantityChange: quantityChange,
+              unit: shade.unit || 'Rolls',
+              changeType: quantityChange > 0 ? 'increase' : quantityChange < 0 ? 'decrease' : 'no-change',
+              performedAt: activity.performedAt,
+              performedBy: activity.performedBy,
+              action: 'UPDATE'
+            });
+          }
+        });
+      } else if (activity.action === 'CREATE' && activity.description) {
+        // For CREATE, we need to parse initial quantities
+        const createdColors = parseColorsFromDescription(activity.description);
+        createdColors.forEach(colorCode => {
+          const shade = shades.find(s => s.colorName === colorCode || s.color === colorCode);
+          if (shade) {
+            // Initial quantity would be the current quantity for CREATE
+            changes.push({
+              shadeId: shade.id,
+              colorName: shade.colorName,
+              color: shade.color,
+              oldQuantity: 0,
+              newQuantity: shade.quantity,
+              quantityChange: shade.quantity,
+              unit: shade.unit || 'Rolls',
+              changeType: 'increase',
+              performedAt: activity.performedAt,
+              performedBy: activity.performedBy,
+              action: 'CREATE'
+            });
+          }
         });
       }
     });
@@ -293,50 +275,97 @@ const StockHistory = () => {
     calculateShadeAnalytics(changes);
   };
 
+  const calculateShadeAnalytics = (changes: ShadeChange[]) => {
+    if (!hasShades) return;
+    
+    const analyticsMap = new Map<number, ShadeAnalytics>();
+    
+    // Initialize with current shades
+    shades.forEach(shade => {
+      analyticsMap.set(shade.id, {
+        shadeId: shade.id,
+        colorName: shade.colorName,
+        color: shade.color,
+        currentQuantity: shade.quantity,
+        unit: shade.unit,
+        totalReductions: 0,
+        totalAdditions: 0,
+        reductionCount: 0,
+        additionCount: 0,
+        totalChanges: 0,
+        netChange: 0,
+        lastUpdated: shade.updatedAt
+      });
+    });
+    
+    // Process changes to calculate analytics
+    changes.forEach(change => {
+      const existing = analyticsMap.get(change.shadeId);
+      if (existing) {
+        if (change.quantityChange < 0) {
+          existing.totalReductions += Math.abs(change.quantityChange);
+          existing.reductionCount += 1;
+        } else if (change.quantityChange > 0) {
+          existing.totalAdditions += change.quantityChange;
+          existing.additionCount += 1;
+        }
+        
+        existing.totalChanges = existing.reductionCount + existing.additionCount;
+        existing.netChange = existing.totalAdditions - existing.totalReductions;
+        existing.lastUpdated = change.performedAt;
+        
+        // Update current quantity to the latest new quantity
+        if (change.action === 'UPDATE' || change.action === 'CREATE') {
+          existing.currentQuantity = change.newQuantity;
+        }
+      }
+    });
+    
+    const analyticsArray = Array.from(analyticsMap.values());
+    setShadeAnalytics(analyticsArray);
+  };
+
   const analyzeStockChanges = () => {
     const changes: StockChange[] = [];
     
-    tracking.forEach(activity => {
-      if (activity.action === 'CREATE' && activity.newData) {
-        const newData = activity.newData;
+    if (hasShades) {
+      // Calculate stock changes from shade changes
+      let totalStockAdded = 0;
+      let totalStockReduced = 0;
+      
+      shadeChanges.forEach(change => {
+        if (change.quantityChange > 0) {
+          totalStockAdded += change.quantityChange;
+        } else if (change.quantityChange < 0) {
+          totalStockReduced += Math.abs(change.quantityChange);
+        }
+      });
+      
+      // Add summary change from shades
+      if (shadeChanges.length > 0) {
         changes.push({
           oldQuantity: 0,
-          newQuantity: newData.quantity || 0,
-          quantityChange: newData.quantity || 0,
-          changeType: 'increase',
-          performedAt: activity.performedAt,
-          performedBy: activity.performedBy,
-          action: 'CREATE'
+          newQuantity: 0,
+          quantityChange: totalStockAdded - totalStockReduced,
+          changeType: totalStockAdded > totalStockReduced ? 'increase' : totalStockReduced > totalStockAdded ? 'decrease' : 'no-change',
+          performedAt: new Date().toISOString(),
+          performedBy: 'System',
+          action: 'CALCULATED'
         });
       }
-      
-      if (activity.action === 'UPDATE' && activity.oldData && activity.newData) {
-        const oldData = activity.oldData;
-        const newData = activity.newData;
-        
-        // Check if this is a stock quantity update
-        if (oldData.quantity !== undefined && newData.quantity !== undefined) {
-          const quantityChange = (newData.quantity || 0) - (oldData.quantity || 0);
-          
-          changes.push({
-            oldQuantity: oldData.quantity || 0,
-            newQuantity: newData.quantity || 0,
-            quantityChange: quantityChange,
-            changeType: quantityChange > 0 ? 'increase' : quantityChange < 0 ? 'decrease' : 'no-change',
-            performedAt: activity.performedAt,
-            performedBy: activity.performedBy,
-            action: 'UPDATE'
-          });
-        }
-      }
-      
+    }
+    
+    // Add any direct stock adjustments from tracking
+    tracking.forEach(activity => {
       if (activity.action === 'ADJUST' && activity.newData) {
         const newData = activity.newData;
         const adjustment = newData.adjustment || 0;
+        const oldQty = newData.oldQuantity || 0;
+        const newQty = oldQty + adjustment;
         
         changes.push({
-          oldQuantity: (newData.oldQuantity || 0),
-          newQuantity: (newData.oldQuantity || 0) + adjustment,
+          oldQuantity: oldQty,
+          newQuantity: newQty,
           quantityChange: adjustment,
           changeType: adjustment > 0 ? 'increase' : adjustment < 0 ? 'decrease' : 'no-change',
           performedAt: activity.performedAt,
@@ -349,62 +378,59 @@ const StockHistory = () => {
     setStockChanges(changes);
   };
 
-  const calculateShadeAnalytics = (changes: ShadeChange[]) => {
-    const analyticsMap = new Map<number, ShadeAnalytics>();
+  // Improved color change extraction
+  const extractColorChanges = (description: string) => {
+    const changes: Array<{
+      colorName: string;
+      oldQuantity: number;
+      newQuantity: number;
+      change: number;
+    }> = [];
     
-    shades.forEach(shade => {
-      analyticsMap.set(shade.id, {
-        shadeId: shade.id,
-        colorName: shade.colorName,
-        color: shade.color,
-        currentQuantity: shade.quantity,
-        currentLength: shade.length,
-        unit: shade.unit,
-        lengthUnit: shade.lengthUnit,
-        totalReductions: 0,
-        totalAdditions: 0,
-        reductionCount: 0,
-        additionCount: 0,
-        lastUpdated: shade.updatedAt
+    // Pattern to match: #204080: quantity: 137 → 117 (-20)
+    const colorPattern = /(#[\w\d]+):\s*quantity:\s*(\d+)\s*→\s*(\d+)\s*\(([+-]?\d+)\)/g;
+    
+    let match;
+    while ((match = colorPattern.exec(description)) !== null) {
+      changes.push({
+        colorName: match[1], // #204080
+        oldQuantity: parseInt(match[2]), // 137
+        newQuantity: parseInt(match[3]), // 117
+        change: parseInt(match[4]) // -20
       });
-    });
+    }
     
-    changes.forEach(change => {
-      const existing = analyticsMap.get(change.shadeId);
-      if (existing) {
-        if (change.quantityChange < 0) {
-          existing.totalReductions += Math.abs(change.quantityChange);
-          existing.reductionCount += 1;
-        } else if (change.quantityChange > 0) {
-          existing.totalAdditions += change.quantityChange;
-          existing.additionCount += 1;
-        }
-        
-        existing.lastUpdated = change.performedAt;
-        
-        if (change.action !== 'DELETE') {
-          existing.currentQuantity = change.newQuantity;
-          existing.currentLength = change.newLength;
-        }
-      } else {
-        analyticsMap.set(change.shadeId, {
-          shadeId: change.shadeId,
-          colorName: change.colorName,
-          color: change.color,
-          currentQuantity: change.action === 'DELETE' ? 0 : change.newQuantity,
-          currentLength: change.action === 'DELETE' ? 0 : change.newLength,
-          unit: change.unit,
-          lengthUnit: change.lengthUnit,
-          totalReductions: change.quantityChange < 0 ? Math.abs(change.quantityChange) : 0,
-          totalAdditions: change.quantityChange > 0 ? change.quantityChange : 0,
-          reductionCount: change.quantityChange < 0 ? 1 : 0,
-          additionCount: change.quantityChange > 0 ? 1 : 0,
-          lastUpdated: change.performedAt
-        });
-      }
-    });
+    return changes;
+  };
+
+  // Extract stock adjustments from description
+  const extractStockAdjustments = (description: string) => {
+    const adjustments: Array<{
+      oldQuantity: number;
+      newQuantity: number;
+      change: number;
+      type: 'INCREMENT' | 'DECREMENT';
+    }> = [];
     
-    setShadeAnalytics(Array.from(analyticsMap.values()));
+    // Pattern to match: Stock DECREMENT: POO1 | 3 units | From: 7 → To: 4
+    const adjustmentPattern = /Stock\s+(INCREMENT|DECREMENT):\s*[^|]+\|\s*(\d+)\s*units\s*\|\s*From:\s*(\d+)\s*→\s*To:\s*(\d+)/gi;
+    
+    let match;
+    while ((match = adjustmentPattern.exec(description)) !== null) {
+      const type = match[1].toUpperCase() as 'INCREMENT' | 'DECREMENT';
+      const change = parseInt(match[2]);
+      const oldQty = parseInt(match[3]);
+      const newQty = parseInt(match[4]);
+      
+      adjustments.push({
+        oldQuantity: oldQty,
+        newQuantity: newQty,
+        change: type === 'DECREMENT' ? -change : change,
+        type
+      });
+    }
+    
+    return adjustments;
   };
 
   const parseColorsFromDescription = (description: string): string[] => {
@@ -417,26 +443,11 @@ const StockHistory = () => {
     return colors;
   };
 
-  const parseShadeCount = (description: string): number => {
-    const shadesMatch = description.match(/(\d+) shades?/);
-    return shadesMatch ? parseInt(shadesMatch[1]) : 0;
-  };
-
-  const parseCreatedShades = (description: string): number => {
-    const createdMatches = description.match(/created shade/g);
-    return createdMatches ? createdMatches.length : 0;
-  };
-
-  const parseInitialStock = (description: string): number => {
-    const stockMatch = description.match(/Stock:.*?(\d+)/);
-    return stockMatch ? parseInt(stockMatch[1]) : 0;
-  };
-
   const calculateSummaryStats = () => {
     if (!stock || !tracking.length) return;
 
-    const totalShadeQuantity = shades.reduce((sum, shade) => sum + shade.quantity, 0);
-    const totalShadeLength = shades.reduce((sum, shade) => sum + shade.length, 0);
+    const totalShadeQuantity = hasShades ? shades.reduce((sum, shade) => sum + shade.quantity, 0) : 0;
+    const totalShadeLength = hasShades ? shades.reduce((sum, shade) => sum + shade.length, 0) : 0;
 
     const stats: SummaryStats = {
       totalActivities: tracking.length,
@@ -454,11 +465,15 @@ const StockHistory = () => {
   };
 
   const calculateAnalytics = () => {
-    if (!tracking.length) return;
+    if (!tracking.length || !stock) return;
 
+    const stockCreatedDate = new Date(stock.createdAt);
     const now = new Date();
     let periods: { start: Date; label: string }[] = [];
 
+    // Start from creation month
+    const startDate = new Date(stockCreatedDate.getFullYear(), stockCreatedDate.getMonth(), 1);
+    
     switch (analyticsPeriod) {
       case 'day':
         for (let i = 6; i >= 0; i--) {
@@ -482,18 +497,26 @@ const StockHistory = () => {
         }
         break;
       case 'month':
-        for (let i = 5; i >= 0; i--) {
-          const date = new Date(now);
-          date.setMonth(now.getMonth() - i);
+        const startMonth = stockCreatedDate.getMonth();
+        const startYear = stockCreatedDate.getFullYear();
+        const endMonth = now.getMonth();
+        const endYear = now.getFullYear();
+        
+        const totalMonths = (endYear - startYear) * 12 + (endMonth - startMonth) + 1;
+        
+        for (let i = 0; i < totalMonths; i++) {
+          const date = new Date(startYear, startMonth + i, 1);
           periods.push({
-            start: new Date(date.getFullYear(), date.getMonth(), 1),
+            start: date,
             label: date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
           });
         }
         break;
       case 'year':
-        for (let i = 2; i >= 0; i--) {
-          const year = now.getFullYear() - i;
+        const startY = stockCreatedDate.getFullYear();
+        const endY = now.getFullYear();
+        
+        for (let year = startY; year <= endY; year++) {
           periods.push({
             start: new Date(year, 0, 1),
             label: year.toString()
@@ -519,21 +542,37 @@ const StockHistory = () => {
 
       periodActivities.forEach(activity => {
         if (activity.action === 'CREATE') {
-          const initialStock = parseInitialStock(activity.description);
-          stockAdded += initialStock;
-        } else if (activity.action === 'ADJUST') {
-          const adjustment = activity.newData?.adjustment || 0;
-          if (adjustment > 0) {
-            stockAdded += adjustment;
-          } else {
-            stockReduced += Math.abs(adjustment);
-          }
-        }
-
-        if (activity.action === 'CREATE') {
-          shadesAdded += parseShadeCount(activity.description);
+          // Count shades from CREATE
+          const colors = parseColorsFromDescription(activity.description);
+          shadesAdded += colors.length;
+          
+          // Parse initial quantities if available
+          const colorChanges = extractColorChanges(activity.description);
+          colorChanges.forEach(change => {
+            if (change.change > 0) {
+              stockAdded += change.change;
+            }
+          });
         } else if (activity.action === 'UPDATE') {
-          shadesAdded += parseCreatedShades(activity.description);
+          // Calculate from shade changes in description
+          const colorChanges = extractColorChanges(activity.description);
+          colorChanges.forEach(change => {
+            if (change.change > 0) {
+              stockAdded += change.change;
+            } else if (change.change < 0) {
+              stockReduced += Math.abs(change.change);
+            }
+          });
+        } else if (activity.action === 'ADJUST') {
+          // Calculate from stock adjustments
+          const adjustments = extractStockAdjustments(activity.description);
+          adjustments.forEach(adj => {
+            if (adj.change > 0) {
+              stockAdded += adj.change;
+            } else if (adj.change < 0) {
+              stockReduced += Math.abs(adj.change);
+            }
+          });
         }
       });
 
@@ -547,7 +586,16 @@ const StockHistory = () => {
       };
     });
 
-    setAnalyticsData(analytics);
+    // Filter out periods with no data
+    const filteredAnalytics = analytics.filter(data => 
+      data.activities > 0 || 
+      data.stockAdded > 0 || 
+      data.stockReduced > 0 || 
+      data.shadesAdded > 0 || 
+      data.shadesRemoved > 0
+    );
+
+    setAnalyticsData(filteredAnalytics);
   };
 
   const getActionDisplay = (action: string) => {
@@ -641,30 +689,212 @@ const StockHistory = () => {
   const totalPages = Math.ceil(getFilteredTracking().length / itemsPerPage);
 
   const exportToCSV = () => {
-    const headers = ['Date', 'Action', 'User', 'Description', 'Quantity Changes', 'Color Changes'];
-    const data = getFilteredTracking().map(activity => {
-      const colors = parseColorsFromDescription(activity.description);
-      const changes = parseQuantityChanges(activity);
-      return [
+    // Activity History Section
+    const activityHeaders = [
+      'ACTIVITY HISTORY',
+      'Date & Time',
+      'Action', 
+      'User',
+      'Description', 
+      'Old Quantity',
+      'New Quantity',
+      'Quantity Change',
+      'Performed At'
+    ];
+    
+    const activityData = getFilteredTracking().map(activity => {
+      if (hasShades) {
+        const colorChanges = extractColorChanges(activity.description);
+        
+        if (colorChanges.length > 0) {
+          // Create a row for each color change
+          return colorChanges.map(change => [
+            '', // Empty for section header
+            formatDate(activity.performedAt),
+            getActionDisplay(activity.action).label,
+            activity.performedBy,
+            activity.description,
+            change.oldQuantity,
+            change.newQuantity,
+            change.change > 0 ? `+${change.change}` : change.change.toString(),
+            activity.performedAt
+          ]);
+        }
+      }
+      
+      // For stock adjustments or activities without color changes
+      const adjustments = extractStockAdjustments(activity.description);
+      if (adjustments.length > 0) {
+        return adjustments.map(adj => [
+          '', // Empty for section header
+          formatDate(activity.performedAt),
+          getActionDisplay(activity.action).label,
+          activity.performedBy,
+          activity.description,
+          adj.oldQuantity,
+          adj.newQuantity,
+          adj.change > 0 ? `+${adj.change}` : adj.change.toString(),
+          activity.performedAt
+        ]);
+      }
+      
+      // Row for activities without specific changes
+      return [[
+        '', // Empty for section header
         formatDate(activity.performedAt),
         getActionDisplay(activity.action).label,
         activity.performedBy,
         activity.description,
-        changes.join('; '),
-        colors.join('; ')
+        '',
+        '',
+        '',
+        activity.performedAt
+      ]];
+    }).flat();
+
+    const csvSections = [
+      activityHeaders.join(','),
+      ...activityData.map(row => row.map(field => `"${field}"`).join(','))
+    ];
+
+    // Add Color Analytics Section only if there are shades
+    if (hasShades && shadeAnalytics.length > 0) {
+      const colorAnalyticsHeaders = [
+        '\n\nCOLOR ANALYTICS',
+        'Color Code',
+        'Color Name',
+        'Current Quantity',
+        'Unit',
+        'Total Reductions',
+        'Total Additions',
+        'Reduction Count',
+        'Addition Count',
+        'Net Change',
+        'Total Changes',
+        'Last Updated'
       ];
+
+      const colorAnalyticsData = shadeAnalytics.map(shade => [
+        '', // Empty for section header
+        shade.color,
+        shade.colorName,
+        shade.currentQuantity,
+        shade.unit,
+        shade.totalReductions,
+        shade.totalAdditions,
+        shade.reductionCount,
+        shade.additionCount,
+        shade.netChange > 0 ? `+${shade.netChange}` : shade.netChange.toString(),
+        shade.totalChanges,
+        formatDate(shade.lastUpdated)
+      ]);
+
+      csvSections.push(
+        colorAnalyticsHeaders.join(','),
+        ...colorAnalyticsData.map(row => row.map(field => `"${field}"`).join(','))
+      );
+    }
+
+    // Add Stock Changes Summary
+    const stockChangesHeaders = [
+      '\n\nSTOCK CHANGES SUMMARY',
+      'Type',
+      'Count',
+      'Total Quantity',
+      'Average Change'
+    ];
+
+    let incrementCount = 0;
+    let incrementTotal = 0;
+    let decrementCount = 0;
+    let decrementTotal = 0;
+
+    stockChanges.forEach(change => {
+      if (change.quantityChange > 0) {
+        incrementCount++;
+        incrementTotal += change.quantityChange;
+      } else if (change.quantityChange < 0) {
+        decrementCount++;
+        decrementTotal += Math.abs(change.quantityChange);
+      }
     });
 
-    const csvContent = [
-      headers.join(','),
-      ...data.map(row => row.map(field => `"${field}"`).join(','))
-    ].join('\n');
+    const stockChangesData = [
+      ['', 'Increments', incrementCount, `+${incrementTotal}`, incrementCount > 0 ? `+${(incrementTotal / incrementCount).toFixed(1)}` : '0'],
+      ['', 'Decrements', decrementCount, `-${decrementTotal}`, decrementCount > 0 ? `-${(decrementTotal / decrementCount).toFixed(1)}` : '0'],
+      ['', 'Net Change', incrementCount + decrementCount, 
+        (incrementTotal - decrementTotal) > 0 ? `+${incrementTotal - decrementTotal}` : (incrementTotal - decrementTotal).toString(),
+        (incrementTotal - decrementTotal) > 0 ? `+${((incrementTotal - decrementTotal) / (incrementCount + decrementCount)).toFixed(1)}` : 
+        ((incrementTotal - decrementTotal) / (incrementCount + decrementCount)).toFixed(1)
+      ]
+    ];
 
-    const blob = new Blob([csvContent], { type: 'text/csv' });
+    csvSections.push(
+      stockChangesHeaders.join(','),
+      ...stockChangesData.map(row => row.map(field => `"${field}"`).join(','))
+    );
+
+    // Summary Section
+    const summaryHeaders = [
+      '\n\nSUMMARY STATISTICS',
+      'Metric',
+      'Value',
+      'Details'
+    ];
+
+    const summaryData = [
+      ['', 'Total Activities', summaryStats?.totalActivities || 0, 'All tracked activities'],
+      ['', 'Created', summaryStats?.created || 0, 'Stock creation events'],
+      ['', 'Updated', summaryStats?.updated || 0, 'Update events'],
+      ['', 'Adjusted', summaryStats?.adjusted || 0, 'Stock adjustments'],
+      ['', 'Deleted', summaryStats?.deleted || 0, 'Deletion events'],
+      ['', 'Image Uploads', summaryStats?.imageUploads || 0, 'Image uploads'],
+      ['', 'Total Colors', summaryStats?.totalShades || 0, 'Different color shades'],
+      ['', 'Total Stock Quantity', stock?.quantity || 0, 'Current stock quantity']
+    ];
+
+    if (hasShades) {
+      summaryData.push(
+        ['', 'Total Shade Quantity', summaryStats?.totalShadeQuantity || 0, 'Total quantity across all colors'],
+        ['', 'Total Shade Length', summaryStats?.totalShadeLength || 0, 'Total length across all colors']
+      );
+    }
+
+    csvSections.push(
+      summaryHeaders.join(','),
+      ...summaryData.map(row => row.map(field => `"${field}"`).join(','))
+    );
+
+    // Stock Information
+    const stockInfoHeaders = [
+      '\n\nSTOCK INFORMATION',
+      'Field',
+      'Value'
+    ];
+
+    const stockInfoData = [
+      ['', 'Stock ID', stock?.stockId || ''],
+      ['', 'Product Name', stock?.product || ''],
+      ['', 'Category', stock?.category || ''],
+      ['', 'Current Stock', stock?.quantity || 0],
+      ['', 'Cost', `$${stock?.cost?.toFixed(2) || '0.00'}`],
+      ['', 'Price', `$${stock?.price?.toFixed(2) || '0.00'}`],
+      ['', 'Created Date', stock ? new Date(stock.createdAt).toLocaleDateString() : ''],
+      ['', 'Updated Date', stock ? new Date(stock.updatedAt).toLocaleDateString() : '']
+    ];
+
+    csvSections.push(
+      stockInfoHeaders.join(','),
+      ...stockInfoData.map(row => row.map(field => `"${field}"`).join(','))
+    );
+
+    const csvContent = csvSections.join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `stock-history-${stock?.stockId}-${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `Stock_History_${stock?.stockId}_${stock?.product}_${new Date().toISOString().split('T')[0]}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -674,37 +904,38 @@ const StockHistory = () => {
   const parseQuantityChanges = (activity: StockTracking) => {
     const changes: string[] = [];
     
-    // Parse stock quantity changes
-    if (activity.oldData && activity.newData && activity.oldData.quantity !== undefined && activity.newData.quantity !== undefined) {
-      const oldQty = activity.oldData.quantity || 0;
-      const newQty = activity.newData.quantity || 0;
-      if (oldQty !== newQty) {
-        changes.push(`Stock: ${oldQty} → ${newQty} units`);
-      }
+    if (hasShades) {
+      // Parse color changes from description
+      const colorChanges = extractColorChanges(activity.description);
+      
+      // Add color changes
+      colorChanges.forEach(change => {
+        const sign = change.change >= 0 ? '+' : '';
+        changes.push(`${change.colorName}: ${change.oldQuantity} → ${change.newQuantity} (${sign}${change.change})`);
+      });
     }
     
-    // Parse shade quantity changes
-    if (activity.oldData && activity.newData && activity.oldData.colorName) {
-      const oldQty = activity.oldData.quantity || 0;
-      const newQty = activity.newData.quantity || 0;
-      if (oldQty !== newQty) {
-        changes.push(`Color ${activity.oldData.colorName}: ${oldQty} → ${newQty} ${activity.oldData.unit || 'units'}`);
-      }
-    }
+    // Parse adjustment changes for stock adjustments
+    const adjustments = extractStockAdjustments(activity.description);
+    adjustments.forEach(adj => {
+      const sign = adj.change >= 0 ? '+' : '';
+      changes.push(`Stock ${adj.type.toLowerCase()}: ${adj.oldQuantity} → ${adj.newQuantity} (${sign}${adj.change})`);
+    });
     
-    // Parse adjustment changes
+    // Parse adjustment changes from newData for ADJUST actions
     if (activity.action === 'ADJUST' && activity.newData) {
       const adjustment = activity.newData.adjustment || 0;
       const oldQty = activity.newData.oldQuantity || 0;
       const newQty = oldQty + adjustment;
-      changes.push(`Stock Adjusted: ${oldQty} → ${newQty} units (${adjustment > 0 ? '+' : ''}${adjustment})`);
+      const sign = adjustment >= 0 ? '+' : '';
+      changes.push(`Stock Adjusted: ${oldQty} → ${newQty} (${sign}${adjustment})`);
     }
     
     return changes;
   };
 
   const renderColorChips = (colors: string[]) => {
-    if (!colors || colors.length === 0) return null;
+    if (!colors || colors.length === 0 || !hasShades) return null;
     return (
       <div className="flex flex-wrap gap-1 mt-1">
         {colors.slice(0, 6).map((color, index) => (
@@ -724,53 +955,112 @@ const StockHistory = () => {
     );
   };
 
-  const renderShadeAnalyticsCard = () => (
-    <div className="p-6 bg-white border border-gray-200 rounded-lg">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-bold text-gray-800">Color Usage Analytics</h2>
-        <div className="flex items-center gap-4">
-          <span className="px-3 py-1 text-sm font-medium text-purple-800 bg-purple-100 rounded-full">
-            {shadeAnalytics.length} colors analyzed
-          </span>
-        </div>
+  const renderColorChipsInline = (colors: string[]) => {
+    if (!colors || colors.length === 0 || !hasShades) return null;
+    return (
+      <div className="flex flex-wrap items-center gap-1">
+        {colors.slice(0, 3).map((color, index) => (
+          <div
+            key={index}
+            className="w-3 h-3 border border-gray-300 rounded-sm shadow-sm"
+            style={{ backgroundColor: color }}
+            title={color}
+          />
+        ))}
+        {colors.length > 3 && (
+          <div className="flex items-center justify-center w-3 h-3 bg-gray-100 border border-gray-300 rounded-sm">
+            <span className="text-xs text-gray-500">+{colors.length - 3}</span>
+          </div>
+        )}
       </div>
+    );
+  };
 
-      <div className="grid grid-cols-1 gap-4 mb-6 md:grid-cols-2 lg:grid-cols-4">
-        <div className="p-4 border border-red-200 rounded-lg bg-red-50">
-          <div className="text-2xl font-bold text-red-600">
-            {shadeAnalytics.reduce((sum, shade) => sum + shade.reductionCount, 0)}
+  const renderShadeAnalyticsCard = () => {
+    if (!hasShades) {
+      return (
+        <div className="p-6 bg-white border border-gray-200 rounded-lg">
+          <div className="py-12 text-center text-gray-500">
+            <FiDroplet className="mx-auto mb-3 text-gray-400" size={32} />
+            <p>No color shades available for this stock</p>
+            <p className="text-sm">This stock item does not have any color shades defined</p>
           </div>
-          <div className="text-sm font-medium text-red-600">Total Reductions</div>
         </div>
-        <div className="p-4 border border-green-200 rounded-lg bg-green-50">
-          <div className="text-2xl font-bold text-green-600">
-            {shadeAnalytics.reduce((sum, shade) => sum + shade.additionCount, 0)}
-          </div>
-          <div className="text-sm font-medium text-green-600">Total Additions</div>
-        </div>
-        <div className="p-4 border border-coffee-200 rounded-lg bg-coffee-50">
-          <div className="text-2xl font-bold text-coffee-600">
-            {shadeAnalytics.reduce((sum, shade) => sum + shade.totalReductions, 0)}
-          </div>
-          <div className="text-sm font-medium text-coffee-600">Total Qty Reduced</div>
-        </div>
-        <div className="p-4 border border-orange-200 rounded-lg bg-orange-50">
-          <div className="text-2xl font-bold text-orange-600">
-            {shadeAnalytics.reduce((sum, shade) => sum + shade.totalAdditions, 0)}
-          </div>
-          <div className="text-sm font-medium text-orange-600">Total Qty Added</div>
-        </div>
-      </div>
+      );
+    }
 
-      <div className="mb-6">
-        <h3 className="mb-4 text-lg font-semibold text-gray-800">Most Used Colors (Highest Reductions)</h3>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {shadeAnalytics
-            .filter(shade => shade.totalReductions > 0)
-            .sort((a, b) => b.totalReductions - a.totalReductions)
-            .slice(0, 6)
-            .map((shade, index) => (
-              <div key={shade.shadeId} className="p-4 border border-gray-200 rounded-lg">
+    // Calculate totals from parsed data
+    const totalReductions = shadeAnalytics.reduce((sum, shade) => sum + shade.totalReductions, 0);
+    const totalAdditions = shadeAnalytics.reduce((sum, shade) => sum + shade.totalAdditions, 0);
+    const totalReductionCount = shadeAnalytics.reduce((sum, shade) => sum + shade.reductionCount, 0);
+    const totalAdditionCount = shadeAnalytics.reduce((sum, shade) => sum + shade.additionCount, 0);
+    const totalChanges = shadeAnalytics.reduce((sum, shade) => sum + shade.totalChanges, 0);
+    const netChange = shadeAnalytics.reduce((sum, shade) => sum + shade.netChange, 0);
+
+    // Sort by most active (most changes)
+    const sortedShades = [...shadeAnalytics].sort((a, b) => b.totalChanges - a.totalChanges);
+
+    return (
+      <div className="p-6 bg-white border border-gray-200 rounded-lg">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-bold text-gray-800">Color Usage Analytics</h2>
+          <div className="flex items-center gap-4">
+            <span className="px-3 py-1 text-sm font-medium text-purple-800 bg-purple-100 rounded-full">
+              {shadeAnalytics.length} colors analyzed
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 mb-6 md:grid-cols-2 lg:grid-cols-6">
+          <div className="p-4 border border-red-200 rounded-lg bg-red-50">
+            <div className="text-2xl font-bold text-red-600">
+              {totalReductionCount}
+            </div>
+            <div className="text-sm font-medium text-red-600">Total Reductions</div>
+            <div className="text-xs text-red-500">Times reduced</div>
+          </div>
+          <div className="p-4 border border-green-200 rounded-lg bg-green-50">
+            <div className="text-2xl font-bold text-green-600">
+              {totalAdditionCount}
+            </div>
+            <div className="text-sm font-medium text-green-600">Total Additions</div>
+            <div className="text-xs text-green-500">Times added</div>
+          </div>
+          <div className="p-4 border rounded-lg border-coffee-200 bg-coffee-50">
+            <div className="text-2xl font-bold text-coffee-600">
+              {totalReductions}
+            </div>
+            <div className="text-sm font-medium text-coffee-600">Total Qty Reduced</div>
+            <div className="text-xs text-coffee-500">Rolls decreased</div>
+          </div>
+          <div className="p-4 border border-orange-200 rounded-lg bg-orange-50">
+            <div className="text-2xl font-bold text-orange-600">
+              {totalAdditions}
+            </div>
+            <div className="text-sm font-medium text-orange-600">Total Qty Added</div>
+            <div className="text-xs text-orange-500">Rolls increased</div>
+          </div>
+          <div className="p-4 border border-purple-200 rounded-lg bg-purple-50">
+            <div className="text-2xl font-bold text-purple-600">
+              {totalChanges}
+            </div>
+            <div className="text-sm font-medium text-purple-600">Total Changes</div>
+            <div className="text-xs text-purple-500">All modifications</div>
+          </div>
+          <div className="p-4 border border-blue-200 rounded-lg bg-blue-50">
+            <div className={`text-2xl font-bold ${netChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {netChange >= 0 ? '+' : ''}{netChange}
+            </div>
+            <div className="text-sm font-medium text-blue-600">Net Change</div>
+            <div className="text-xs text-blue-500">Overall balance</div>
+          </div>
+        </div>
+
+        <div className="mb-6">
+          <h3 className="mb-4 text-lg font-semibold text-gray-800">Color Performance Overview</h3>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {sortedShades.slice(0, 6).map((shade, index) => (
+              <div key={shade.shadeId} className="p-4 border border-gray-200 rounded-lg hover:shadow-md">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-3">
                     <div
@@ -783,318 +1073,445 @@ const StockHistory = () => {
                       <p className="text-sm text-gray-600">Current: {shade.currentQuantity} {shade.unit}</p>
                     </div>
                   </div>
-                  <span className="px-2 py-1 text-xs font-medium text-red-800 bg-red-100 rounded-full">
+                  <span className="px-2 py-1 text-xs font-medium text-gray-800 bg-gray-100 rounded-full">
                     #{index + 1}
                   </span>
                 </div>
                 <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Times Reduced:</span>
-                    <span className="font-medium text-red-600">{shade.reductionCount}</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600">Reductions:</span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-red-600">{shade.reductionCount}</span>
+                      <span className="text-xs text-red-500">({shade.totalReductions} {shade.unit})</span>
+                    </div>
                   </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Total Reduced:</span>
-                    <span className="font-medium text-red-600">-{shade.totalReductions} {shade.unit}</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600">Additions:</span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-green-600">{shade.additionCount}</span>
+                      <span className="text-xs text-green-500">({shade.totalAdditions} {shade.unit})</span>
+                    </div>
                   </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Times Added:</span>
-                    <span className="font-medium text-green-600">{shade.additionCount}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Total Added:</span>
-                    <span className="font-medium text-green-600">+{shade.totalAdditions} {shade.unit}</span>
+                  <div className="pt-2 border-t border-gray-100">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-gray-700">Net Change:</span>
+                      <span className={`font-medium ${shade.netChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {shade.netChange >= 0 ? '+' : ''}{shade.netChange} {shade.unit}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between mt-1">
+                      <span className="text-xs text-gray-500">Total Changes:</span>
+                      <span className="text-xs font-medium text-purple-600">{shade.totalChanges}</span>
+                    </div>
                   </div>
                 </div>
               </div>
             ))}
-        </div>
-      </div>
-
-      <div className="overflow-x-auto">
-        <h3 className="mb-4 text-lg font-semibold text-gray-800">Detailed Color Analytics</h3>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-200">
-              <th className="px-4 py-3 font-semibold text-left text-gray-700">Color</th>
-              <th className="px-4 py-3 font-semibold text-left text-gray-700">Current Qty</th>
-              <th className="px-4 py-3 font-semibold text-left text-gray-700">Reductions</th>
-              <th className="px-4 py-3 font-semibold text-left text-gray-700">Additions</th>
-              <th className="px-4 py-3 font-semibold text-left text-gray-700">Usage Count</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {shadeAnalytics
-              .sort((a, b) => b.reductionCount - a.reductionCount)
-              .map((shade) => (
-                <tr key={shade.shadeId} className="hover:bg-gray-50">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <div
-                        className="w-6 h-6 border border-gray-300 rounded-sm shadow-sm"
-                        style={{ backgroundColor: shade.color }}
-                        title={shade.color}
-                      />
-                      <span className="font-medium text-gray-800">{shade.colorName}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="font-medium text-coffee-600">
-                      {shade.currentQuantity} {shade.unit}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <FiTrendingDown className="text-red-500" size={14} />
-                      <span className="text-red-600">
-                        {shade.totalReductions} {shade.unit}
-                      </span>
-                      <span className="px-1 text-xs text-red-500 bg-red-100 rounded">
-                        {shade.reductionCount}x
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <FiTrendingUp className="text-green-500" size={14} />
-                      <span className="text-green-600">
-                        {shade.totalAdditions} {shade.unit}
-                      </span>
-                      <span className="px-1 text-xs text-green-500 bg-green-100 rounded">
-                        {shade.additionCount}x
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <span className="px-2 py-1 text-xs font-medium text-purple-800 bg-purple-100 rounded-full">
-                      {shade.reductionCount + shade.additionCount} changes
-                    </span>
-                  </td>
-                </tr>
-              ))}
-          </tbody>
-        </table>
-      </div>
-
-      {shadeAnalytics.length === 0 && (
-        <div className="py-12 text-center text-gray-500">
-          <FiActivity className="mx-auto mb-3 text-gray-400" size={32} />
-          <p>No shade usage analytics available yet</p>
-          <p className="text-sm">Shade analytics will appear after shade quantity updates</p>
-        </div>
-      )}
-    </div>
-  );
-
-  const renderShadesCard = () => (
-    <div className="p-6 bg-white border border-gray-200 rounded-lg">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-bold text-gray-800">Current Color Shades</h2>
-        <div className="flex items-center gap-4">
-          <span className="px-3 py-1 text-sm font-medium text-purple-800 bg-purple-100 rounded-full">
-            {shades.length} colors
-          </span>
-        </div>
-      </div>
-
-      {shades.length > 0 ? (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {shades.map((shade) => {
-            const analytics = shadeAnalytics.find(s => s.shadeId === shade.id);
-            return (
-              <div
-                key={shade.id}
-                className="p-4 transition-shadow border border-gray-200 rounded-lg hover:shadow-md"
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <div>
-                    <h3 className="font-semibold text-gray-800">{shade.colorName}</h3>
-                    <p className="text-sm text-gray-600">
-                      {shade.quantity} {shade.unit} • {shade.length} {shade.lengthUnit}
-                    </p>
-                  </div>
-                  <div
-                    className="w-8 h-8 border border-gray-300 rounded-md shadow-sm"
-                    style={{ backgroundColor: shade.color }}
-                    title={shade.color}
-                  />
-                </div>
-                {analytics && (analytics.reductionCount > 0 || analytics.additionCount > 0) && (
-                  <div className="p-3 mt-2 rounded-lg bg-gray-50">
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div className="text-center">
-                        <div className="font-medium text-red-600">-{analytics.totalReductions}</div>
-                        <div className="text-gray-500">{analytics.reductionCount} reductions</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="font-medium text-green-600">+{analytics.totalAdditions}</div>
-                        <div className="text-gray-500">{analytics.additionCount} additions</div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                <div className="pt-3 border-t border-gray-100">
-                  <span className="text-xs text-gray-500">
-                    Updated: {new Date(shade.updatedAt).toLocaleDateString()}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="py-12 text-center text-gray-500">
-          <FiDroplet className="mx-auto mb-3 text-gray-400" size={32} />
-          <p>No shades found for this stock</p>
-        </div>
-      )}
-
-      {summaryStats && (
-        <div className="grid grid-cols-1 gap-4 mt-6 md:grid-cols-3">
-          <div className="p-4 border border-purple-200 rounded-lg bg-purple-50">
-            <div className="text-2xl font-bold text-purple-600">{summaryStats.totalShades}</div>
-            <div className="text-sm font-medium text-purple-600">Total Colors</div>
-          </div>
-          <div className="p-4 border border-green-200 rounded-lg bg-green-50">
-            <div className="text-2xl font-bold text-green-600">{summaryStats.totalShadeQuantity}</div>
-            <div className="text-sm font-medium text-green-600">Total Quantity</div>
-          </div>
-          <div className="p-4 border border-coffee-200 rounded-lg bg-coffee-50">
-            <div className="text-2xl font-bold text-coffee-600">{summaryStats.totalShadeLength}</div>
-            <div className="text-sm font-medium text-coffee-600">Total Length</div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-
-  const renderAnalyticsCard = () => (
-    <div className="p-6 bg-white border border-gray-200 rounded-lg">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-bold text-gray-800">Stock & Shades Analytics</h2>
-        <select 
-          value={analyticsPeriod}
-          onChange={(e) => setAnalyticsPeriod(e.target.value as any)}
-          className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-coffee-500 focus:border-coffee-500"
-        >
-          <option value="day">Daily</option>
-          <option value="week">Weekly</option>
-          <option value="month">Monthly</option>
-          <option value="year">Yearly</option>
-        </select>
-      </div>
-
-      <div className="grid grid-cols-1 gap-6 mb-6 lg:grid-cols-2">
-        <div className="p-6 border border-coffee-200 rounded-lg bg-gradient-to-br from-coffee-50 to-coffee-100">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 rounded-lg bg-coffee-600">
-              <FiPackage className="text-white" size={20} />
-            </div>
-            <h3 className="text-lg font-semibold text-coffee-900">Stock Changes</h3>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-green-600">
-                +{analyticsData.reduce((sum, data) => sum + data.stockAdded, 0)}
-              </div>
-              <div className="text-sm font-medium text-green-700">Total Added</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-red-600">
-                -{analyticsData.reduce((sum, data) => sum + data.stockReduced, 0)}
-              </div>
-              <div className="text-sm font-medium text-red-700">Total Reduced</div>
-            </div>
           </div>
         </div>
 
-        <div className="p-6 border border-purple-200 rounded-lg bg-gradient-to-br from-purple-50 to-purple-100">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 bg-purple-600 rounded-lg">
-              <FiDroplet className="text-white" size={20} />
-            </div>
-            <h3 className="text-lg font-semibold text-purple-900">Shades Changes</h3>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-green-600">
-                +{analyticsData.reduce((sum, data) => sum + data.shadesAdded, 0)}
-              </div>
-              <div className="text-sm font-medium text-green-700">Total Added</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-red-600">
-                -{analyticsData.reduce((sum, data) => sum + data.shadesRemoved, 0)}
-              </div>
-              <div className="text-sm font-medium text-red-700">Total Removed</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-200">
-              <th className="px-4 py-3 font-semibold text-left text-gray-700">Period</th>
-              <th className="px-4 py-3 font-semibold text-left text-gray-700">Activities</th>
-              <th className="px-4 py-3 font-semibold text-left text-gray-700">Stock Added</th>
-              <th className="px-4 py-3 font-semibold text-left text-gray-700">Stock Reduced</th>
-              <th className="px-4 py-3 font-semibold text-left text-gray-700">Shades Added</th>
-              <th className="px-4 py-3 font-semibold text-left text-gray-700">Shades Removed</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {analyticsData.map((data, index) => (
-              <tr key={index} className="hover:bg-gray-50">
-                <td className="px-4 py-3 font-medium text-gray-800">{data.period}</td>
-                <td className="px-4 py-3 text-gray-600">
-                  <span className="px-2 py-1 text-xs font-medium text-coffee-800 bg-coffee-50 rounded-full">
-                    {data.activities}
-                  </span>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2 font-medium text-green-600">
-                    <FiTrendingUp size={14} />
-                    +{data.stockAdded}
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2 font-medium text-red-600">
-                    <FiTrendingDown size={14} />
-                    -{data.stockReduced}
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2 font-medium text-green-600">
-                    <FiTrendingUp size={14} />
-                    +{data.shadesAdded}
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2 font-medium text-red-600">
-                    <FiTrendingDown size={14} />
-                    -{data.shadesRemoved}
-                  </div>
-                </td>
+        <div className="overflow-x-auto">
+          <h3 className="mb-4 text-lg font-semibold text-gray-800">Detailed Color Analytics</h3>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-200">
+                <th className="px-4 py-3 font-semibold text-left text-gray-700">Color</th>
+                <th className="px-4 py-3 font-semibold text-left text-gray-700">Current Qty</th>
+                <th className="px-4 py-3 font-semibold text-left text-gray-700">Reductions</th>
+                <th className="px-4 py-3 font-semibold text-left text-gray-700">Additions</th>
+                <th className="px-4 py-3 font-semibold text-left text-gray-700">Net Change</th>
+                <th className="px-4 py-3 font-semibold text-left text-gray-700">Total Changes</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {analyticsData.length === 0 && (
-        <div className="py-12 text-center text-gray-500">
-          <FiBarChart2 className="mx-auto mb-3 text-gray-400" size={32} />
-          <p>No analytics data available for the selected period</p>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {sortedShades.map((shade) => {
+                const avgReduction = shade.reductionCount > 0 ? (shade.totalReductions / shade.reductionCount).toFixed(1) : '0';
+                const avgAddition = shade.additionCount > 0 ? (shade.totalAdditions / shade.additionCount).toFixed(1) : '0';
+                
+                return (
+                  <tr key={shade.shadeId} className="hover:bg-gray-50">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="w-6 h-6 border border-gray-300 rounded-sm shadow-sm"
+                          style={{ backgroundColor: shade.color }}
+                          title={shade.color}
+                        />
+                        <div>
+                          <span className="font-medium text-gray-800">{shade.colorName}</span>
+                          <div className="text-xs text-gray-500">{shade.color}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="font-medium text-coffee-600">
+                        {shade.currentQuantity} {shade.unit}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1">
+                          <FiTrendingDown className="text-red-500" size={14} />
+                          <span className="text-red-600">
+                            {shade.totalReductions}
+                          </span>
+                        </div>
+                        <span className="px-1 text-xs text-red-500 bg-red-100 rounded">
+                          {shade.reductionCount}x
+                        </span>
+                      </div>
+                      <div className="mt-1 text-xs text-gray-500">
+                        Avg: {avgReduction} per reduction
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1">
+                          <FiTrendingUp className="text-green-500" size={14} />
+                          <span className="text-green-600">
+                            {shade.totalAdditions}
+                          </span>
+                        </div>
+                        <span className="px-1 text-xs text-green-500 bg-green-100 rounded">
+                          {shade.additionCount}x
+                        </span>
+                      </div>
+                      <div className="mt-1 text-xs text-gray-500">
+                        Avg: {avgAddition} per addition
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className={`flex items-center gap-2 font-medium ${shade.netChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {shade.netChange >= 0 ? (
+                          <>
+                            <FiTrendingUp size={14} />
+                            +{shade.netChange}
+                          </>
+                        ) : (
+                          <>
+                            <FiTrendingDown size={14} />
+                            {shade.netChange}
+                          </>
+                        )}
+                      </div>
+                      <div className="mt-1 text-xs text-gray-500">
+                        {shade.netChange >= 0 ? 'Increase' : 'Decrease'} overall
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-col gap-1">
+                        <span className="px-2 py-1 text-xs font-medium text-center text-purple-800 bg-purple-100 rounded-full">
+                          {shade.totalChanges} total
+                        </span>
+                        <div className="text-xs text-center text-gray-500">
+                          {shade.reductionCount}R / {shade.additionCount}A
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-      )}
-    </div>
-  );
+
+        {shadeAnalytics.length === 0 && (
+          <div className="py-12 text-center text-gray-500">
+            <FiActivity className="mx-auto mb-3 text-gray-400" size={32} />
+            <p>No shade usage analytics available yet</p>
+            <p className="text-sm">Shade analytics will appear after shade quantity updates</p>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderShadesCard = () => {
+    if (!hasShades) {
+      return (
+        <div className="p-6 bg-white border border-gray-200 rounded-lg">
+          <div className="py-12 text-center text-gray-500">
+            <FiDroplet className="mx-auto mb-3 text-gray-400" size={32} />
+            <p>No color shades available for this stock</p>
+            <p className="text-sm">This stock item does not have any color shades defined</p>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="p-6 bg-white border border-gray-200 rounded-lg">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-bold text-gray-800">Current Color Shades</h2>
+          <div className="flex items-center gap-4">
+            <span className="px-3 py-1 text-sm font-medium text-purple-800 bg-purple-100 rounded-full">
+              {shades.length} colors
+            </span>
+          </div>
+        </div>
+
+        {shades.length > 0 ? (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {shades.map((shade) => {
+              const analytics = shadeAnalytics.find(s => s.shadeId === shade.id);
+              
+              return (
+                <div
+                  key={shade.id}
+                  className="p-4 transition-shadow border border-gray-200 rounded-lg hover:shadow-md"
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <h3 className="font-semibold text-gray-800">{shade.colorName}</h3>
+                      <div className="flex items-center gap-2 mt-1">
+                        <div
+                          className="w-4 h-4 border border-gray-300 rounded-sm"
+                          style={{ backgroundColor: shade.color }}
+                          title={shade.color}
+                        />
+                        <span className="text-xs text-gray-500">{shade.color}</span>
+                      </div>
+                      <p className="mt-2 text-sm text-gray-600">
+                        {shade.quantity} {shade.unit} • {shade.length} {shade.lengthUnit}
+                      </p>
+                    </div>
+                    <div
+                      className="w-10 h-10 border border-gray-300 rounded-md shadow-sm"
+                      style={{ backgroundColor: shade.color }}
+                      title={shade.color}
+                    />
+                  </div>
+                  {analytics && (analytics.reductionCount > 0 || analytics.additionCount > 0) && (
+                    <div className="p-3 mt-2 rounded-lg bg-gray-50">
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="text-center">
+                          <div className="font-medium text-red-600">-{analytics.totalReductions}</div>
+                          <div className="text-gray-500">{analytics.reductionCount} reductions</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="font-medium text-green-600">+{analytics.totalAdditions}</div>
+                          <div className="text-gray-500">{analytics.additionCount} additions</div>
+                        </div>
+                      </div>
+                      <div className="mt-2 text-center">
+                        <span className={`text-xs font-medium ${analytics.netChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          Net: {analytics.netChange >= 0 ? '+' : ''}{analytics.netChange} {shade.unit}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                  <div className="pt-3 border-t border-gray-100">
+                    <span className="text-xs text-gray-500">
+                      Updated: {new Date(shade.updatedAt).toLocaleDateString()}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="py-12 text-center text-gray-500">
+            <FiDroplet className="mx-auto mb-3 text-gray-400" size={32} />
+            <p>No shades found for this stock</p>
+          </div>
+        )}
+
+        {summaryStats && (
+          <div className="grid grid-cols-1 gap-4 mt-6 md:grid-cols-3">
+            <div className="p-4 border border-purple-200 rounded-lg bg-purple-50">
+              <div className="text-2xl font-bold text-purple-600">{summaryStats.totalShades}</div>
+              <div className="text-sm font-medium text-purple-600">Total Colors</div>
+            </div>
+            <div className="p-4 border border-green-200 rounded-lg bg-green-50">
+              <div className="text-2xl font-bold text-green-600">{summaryStats.totalShadeQuantity}</div>
+              <div className="text-sm font-medium text-green-600">Total Quantity</div>
+            </div>
+            <div className="p-4 border rounded-lg border-coffee-200 bg-coffee-50">
+              <div className="text-2xl font-bold text-coffee-600">{summaryStats.totalShadeLength}</div>
+              <div className="text-sm font-medium text-coffee-600">Total Length</div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderAnalyticsCard = () => {
+    // Calculate totals
+    const totalStockAdded = analyticsData.reduce((sum, data) => sum + data.stockAdded, 0);
+    const totalStockReduced = analyticsData.reduce((sum, data) => sum + data.stockReduced, 0);
+    const totalShadesAdded = analyticsData.reduce((sum, data) => sum + data.shadesAdded, 0);
+    const totalShadesRemoved = analyticsData.reduce((sum, data) => sum + data.shadesRemoved, 0);
+
+    return (
+      <div className="p-6 bg-white border border-gray-200 rounded-lg">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-bold text-gray-800">Stock Analytics</h2>
+          <select 
+            value={analyticsPeriod}
+            onChange={(e) => setAnalyticsPeriod(e.target.value as any)}
+            className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-coffee-500 focus:border-coffee-500"
+          >
+            <option value="day">Daily</option>
+            <option value="week">Weekly</option>
+            <option value="month">Monthly</option>
+            <option value="year">Yearly</option>
+          </select>
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 mb-6">
+          <div className="p-6 border rounded-lg border-coffee-200 bg-gradient-to-br from-coffee-50 to-coffee-100">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 rounded-lg bg-coffee-600">
+                <FiPackage className="text-white" size={20} />
+              </div>
+              <h3 className="text-lg font-semibold text-coffee-900">Stock Changes</h3>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-green-600">
+                  +{totalStockAdded}
+                </div>
+                <div className="text-sm font-medium text-green-700">Total Added</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-red-600">
+                  -{totalStockReduced}
+                </div>
+                <div className="text-sm font-medium text-red-700">Total Reduced</div>
+              </div>
+            </div>
+            <div className="mt-4 text-center">
+              <div className={`text-lg font-bold ${totalStockAdded - totalStockReduced >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                Net: {totalStockAdded - totalStockReduced >= 0 ? '+' : ''}{totalStockAdded - totalStockReduced}
+              </div>
+              <div className="text-sm text-gray-600">Overall Change</div>
+            </div>
+          </div>
+
+          {hasShades && (
+            <div className="p-6 border border-purple-200 rounded-lg bg-gradient-to-br from-purple-50 to-purple-100">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 bg-purple-600 rounded-lg">
+                  <FiDroplet className="text-white" size={20} />
+                </div>
+                <h3 className="text-lg font-semibold text-purple-900">Shades Changes</h3>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-green-600">
+                    +{totalShadesAdded}
+                  </div>
+                  <div className="text-sm font-medium text-green-700">Total Added</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-red-600">
+                    -{totalShadesRemoved}
+                  </div>
+                  <div className="text-sm font-medium text-red-700">Total Removed</div>
+                </div>
+              </div>
+              <div className="mt-4 text-center">
+                <div className={`text-lg font-bold ${totalShadesAdded - totalShadesRemoved >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  Net: {totalShadesAdded - totalShadesRemoved >= 0 ? '+' : ''}{totalShadesAdded - totalShadesRemoved}
+                </div>
+                <div className="text-sm text-gray-600">Overall Change</div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-200">
+                <th className="px-4 py-3 font-semibold text-left text-gray-700">Period</th>
+                <th className="px-4 py-3 font-semibold text-left text-gray-700">Activities</th>
+                <th className="px-4 py-3 font-semibold text-left text-gray-700">Stock Added</th>
+                <th className="px-4 py-3 font-semibold text-left text-gray-700">Stock Reduced</th>
+                {hasShades && (
+                  <>
+                    <th className="px-4 py-3 font-semibold text-left text-gray-700">Shades Added</th>
+                    <th className="px-4 py-3 font-semibold text-left text-gray-700">Shades Removed</th>
+                  </>
+                )}
+                <th className="px-4 py-3 font-semibold text-left text-gray-700">Net</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {analyticsData.map((data, index) => {
+                const netStock = data.stockAdded - data.stockReduced;
+                const netShades = data.shadesAdded - data.shadesRemoved;
+                
+                return (
+                  <tr key={index} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-medium text-gray-800">{data.period}</td>
+                    <td className="px-4 py-3 text-gray-600">
+                      <span className="px-2 py-1 text-xs font-medium rounded-full text-coffee-800 bg-coffee-50">
+                        {data.activities}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2 font-medium text-green-600">
+                        <FiTrendingUp size={14} />
+                        +{data.stockAdded}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2 font-medium text-red-600">
+                        <FiTrendingDown size={14} />
+                        -{data.stockReduced}
+                      </div>
+                    </td>
+                    {hasShades && (
+                      <>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2 font-medium text-green-600">
+                            <FiTrendingUp size={14} />
+                            +{data.shadesAdded}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2 font-medium text-red-600">
+                            <FiTrendingDown size={14} />
+                            -{data.shadesRemoved}
+                          </div>
+                        </td>
+                      </>
+                    )}
+                    <td className="px-4 py-3">
+                      <div className="flex flex-col gap-1">
+                        <div className={`text-xs font-medium ${netStock >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          Stock: {netStock >= 0 ? '+' : ''}{netStock}
+                        </div>
+                        {hasShades && (
+                          <div className={`text-xs font-medium ${netShades >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            Shades: {netShades >= 0 ? '+' : ''}{netShades}
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {analyticsData.length === 0 && (
+          <div className="py-12 text-center text-gray-500">
+            <FiBarChart2 className="mx-auto mb-3 text-gray-400" size={32} />
+            <p>No analytics data available for the selected period</p>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const renderSummaryCard = () => (
     <div className="p-6 bg-white border border-gray-200 rounded-lg">
       <div className="grid grid-cols-2 gap-4 mb-6 md:grid-cols-4 lg:grid-cols-5">
-        <div className="p-4 border border-coffee-200 rounded-lg bg-coffee-50">
+        <div className="p-4 border rounded-lg border-coffee-200 bg-coffee-50">
           <div className="text-2xl font-bold text-coffee-600">{summaryStats?.totalActivities || 0}</div>
           <div className="text-sm font-medium text-coffee-600">Total Activities</div>
         </div>
@@ -1125,14 +1542,16 @@ const StockHistory = () => {
               <th className="px-4 py-3 font-semibold text-left text-gray-700">User</th>
               <th className="px-4 py-3 font-semibold text-left text-gray-700">Description</th>
               <th className="px-4 py-3 font-semibold text-left text-gray-700">Quantity Changes</th>
-              <th className="px-4 py-3 font-semibold text-left text-gray-700">Colors</th>
+              {hasShades && (
+                <th className="px-4 py-3 font-semibold text-left text-gray-700">Colors</th>
+              )}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
             {getPaginatedData().map((activity) => {
               const actionDisplay = getActionDisplay(activity.action);
               const IconComponent = actionDisplay.icon;
-              const colors = parseColorsFromDescription(activity.description);
+              const colors = hasShades ? parseColorsFromDescription(activity.description) : [];
               const quantityChanges = parseQuantityChanges(activity);
 
               return (
@@ -1154,20 +1573,47 @@ const StockHistory = () => {
                   </td>
                   <td className="max-w-xs px-4 py-3 text-gray-600">
                     {activity.description}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-600">
-                    {quantityChanges.slice(0, 2).map((change, idx) => (
-                      <div key={idx} className="mb-1 last:mb-0">
-                        {change}
+                    {hasShades && colors.length > 0 && (
+                      <div className="mt-1">
+                        {renderColorChipsInline(colors)}
                       </div>
-                    ))}
-                    {quantityChanges.length > 2 && (
-                      <div className="text-gray-400">+{quantityChanges.length - 2} more</div>
                     )}
                   </td>
-                  <td className="px-4 py-3">
-                    {renderColorChips(colors)}
+                  <td className="px-4 py-3 text-sm text-gray-600">
+                    {quantityChanges.length > 0 ? (
+                      quantityChanges.slice(0, 3).map((change, idx) => {
+                        // Extract color from change text if it contains a color code
+                        const colorMatch = change.match(/#[\w\d]+/);
+                        const changeText = colorMatch ? change.replace(colorMatch[0], '').trim() : change;
+                        
+                        return (
+                          <div key={idx} className="mb-1 last:mb-0">
+                            {colorMatch && hasShades && (
+                              <div className="flex items-center gap-1 mb-1">
+                                <div
+                                  className="w-3 h-3 border border-gray-300 rounded-sm"
+                                  style={{ backgroundColor: colorMatch[0] }}
+                                  title={colorMatch[0]}
+                                />
+                                <span className="text-gray-700">{colorMatch[0]}</span>
+                              </div>
+                            )}
+                            <div className="pl-4 text-gray-600">{changeText}</div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <span className="text-gray-400">No quantity changes</span>
+                    )}
+                    {quantityChanges.length > 3 && (
+                      <div className="text-gray-400">+{quantityChanges.length - 3} more</div>
+                    )}
                   </td>
+                  {hasShades && (
+                    <td className="px-4 py-3">
+                      {renderColorChips(colors)}
+                    </td>
+                  )}
                 </tr>
               );
             })}
@@ -1232,7 +1678,7 @@ const StockHistory = () => {
         {getPaginatedData().map((activity, index) => {
           const actionDisplay = getActionDisplay(activity.action);
           const IconComponent = actionDisplay.icon;
-          const colors = parseColorsFromDescription(activity.description);
+          const colors = hasShades ? parseColorsFromDescription(activity.description) : [];
           const quantityChanges = parseQuantityChanges(activity);
 
           return (
@@ -1265,20 +1711,40 @@ const StockHistory = () => {
 
                   <p className="mb-3 font-medium text-gray-800">
                     {activity.description}
+                    {hasShades && colors.length > 0 && (
+                      <div className="mt-2">
+                        {renderColorChipsInline(colors)}
+                      </div>
+                    )}
                   </p>
 
                   {quantityChanges.length > 0 && (
                     <div className="p-3 mb-3 bg-white border border-gray-200 rounded-lg">
                       <p className="mb-2 text-sm font-medium text-gray-700">Quantity Changes:</p>
                       <ul className="space-y-1 text-sm text-gray-600">
-                        {quantityChanges.map((change, idx) => (
-                          <li key={idx}>• {change}</li>
-                        ))}
+                        {quantityChanges.map((change, idx) => {
+                          // Extract color from change text if it contains a color code
+                          const colorMatch = change.match(/#[\w\d]+/);
+                          const changeText = colorMatch ? change.replace(colorMatch[0], '').trim() : change;
+                          
+                          return (
+                            <li key={idx} className="flex items-start gap-2">
+                              {colorMatch && hasShades && (
+                                <div
+                                  className="w-3 h-3 mt-0.5 border border-gray-300 rounded-sm flex-shrink-0"
+                                  style={{ backgroundColor: colorMatch[0] }}
+                                  title={colorMatch[0]}
+                                />
+                              )}
+                              <span>{colorMatch && hasShades ? `${colorMatch[0]}: ${changeText}` : `• ${change}`}</span>
+                            </li>
+                          );
+                        })}
                       </ul>
                     </div>
                   )}
 
-                  {colors.length > 0 && (
+                  {hasShades && colors.length > 0 && (
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text-gray-600">Colors:</span>
                       {renderColorChips(colors)}
@@ -1412,23 +1878,33 @@ const StockHistory = () => {
                   {summaryStats && (
                     <div className="flex flex-wrap gap-4 mt-2">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-gray-600">Total Colors:</span>
-                        <span className="px-2 py-1 text-sm font-medium text-purple-800 bg-purple-100 rounded-full">
-                          {summaryStats.totalShades} colors
+                        <span className="text-sm font-medium text-gray-600">Total Activities:</span>
+                        <span className="px-2 py-1 text-sm font-medium rounded-full text-coffee-800 bg-coffee-50">
+                          {summaryStats.totalActivities} activities
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-gray-600">Shade Quantity:</span>
-                        <span className="px-2 py-1 text-sm font-medium text-green-800 bg-green-100 rounded-full">
-                          {summaryStats.totalShadeQuantity} units
+                        <span className="text-sm font-medium text-gray-600">Adjustments:</span>
+                        <span className="px-2 py-1 text-sm font-medium text-orange-800 bg-orange-100 rounded-full">
+                          {summaryStats.adjusted} adjustments
                         </span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-gray-600">Total Length:</span>
-                        <span className="px-2 py-1 text-sm font-medium text-coffee-800 bg-coffee-50 rounded-full">
-                          {summaryStats.totalShadeLength} {shades[0]?.lengthUnit || 'units'}
-                        </span>
-                      </div>
+                      {hasShades && (
+                        <>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-gray-600">Total Colors:</span>
+                            <span className="px-2 py-1 text-sm font-medium text-purple-800 bg-purple-100 rounded-full">
+                              {summaryStats.totalShades} colors
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-gray-600">Shade Quantity:</span>
+                            <span className="px-2 py-1 text-sm font-medium text-green-800 bg-green-100 rounded-full">
+                              {summaryStats.totalShadeQuantity} units
+                            </span>
+                          </div>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1486,28 +1962,32 @@ const StockHistory = () => {
                   <FiBarChart2 size={16} />
                   Analytics
                 </button>
-                <button
-                  onClick={() => setActiveTab('shades')}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                    activeTab === 'shades' 
-                      ? 'bg-white text-purple-600 shadow-sm' 
-                      : 'text-gray-600 hover:text-gray-800'
-                  }`}
-                >
-                  <FiDroplet size={16} />
-                  Color Shades ({shades.length})
-                </button>
-                <button
-                  onClick={() => setActiveTab('shade-analytics')}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                    activeTab === 'shade-analytics' 
-                      ? 'bg-white text-orange-600 shadow-sm' 
-                      : 'text-gray-600 hover:text-gray-800'
-                  }`}
-                >
-                  <FiPieChart size={16} />
-                  Color Analytics
-                </button>
+                {hasShades && (
+                  <>
+                    <button
+                      onClick={() => setActiveTab('shades')}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                        activeTab === 'shades' 
+                          ? 'bg-white text-purple-600 shadow-sm' 
+                          : 'text-gray-600 hover:text-gray-800'
+                      }`}
+                    >
+                      <FiDroplet size={16} />
+                      Color Shades ({shades.length})
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('shade-analytics')}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                        activeTab === 'shade-analytics' 
+                          ? 'bg-white text-orange-600 shadow-sm' 
+                          : 'text-gray-600 hover:text-gray-800'
+                      }`}
+                    >
+                      <FiPieChart size={16} />
+                      Color Analytics
+                    </button>
+                  </>
+                )}
               </div>
 
               {activeTab !== 'analytics' && activeTab !== 'shades' && activeTab !== 'shade-analytics' && (
