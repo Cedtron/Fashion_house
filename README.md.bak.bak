@@ -1,0 +1,49 @@
+## Running the Project with Docker
+
+This project provides a full Docker-based setup for local development and deployment. The stack includes three main services:
+
+- **Back-end (NestJS, Node.js v22.13.1)**
+- **Front-end (Vite, Node.js v22.13.1)**
+- **Image Service (Python 3.11)**
+
+### Requirements
+- Docker and Docker Compose installed on your system.
+- No additional global dependencies are required.
+
+### Service Ports
+- **Back-end:** [http://localhost:3000](http://localhost:3000)
+- **Front-end:** [http://localhost:5173](http://localhost:5173)
+- **Image Service:** [http://localhost:8000](http://localhost:8000)
+
+### Environment Variables
+- If your back-end or front-end requires environment variables, create `.env` files in `./back-end` and/or `./front-end` as needed. See the Docker Compose file for details. By default, no `.env` files are required unless your application logic depends on them.
+
+### Build and Run
+To build and start all services, run:
+
+```sh
+docker compose up --build
+```
+
+This will build and start the back-end, front-end, and image service containers, and connect them on a shared Docker network.
+
+### Special Configuration
+- All services run as non-root users for improved security.
+- The back-end and front-end use Node.js version `22.13.1` (as specified in the Dockerfiles).
+- The image service uses Python 3.11 and installs dependencies into a virtual environment inside the container.
+- If you need to add environment variables, uncomment and edit the `env_file` lines in `compose.yaml` and provide the corresponding `.env` files.
+
+### Service Dependencies
+- The back-end depends on the image service.
+- The front-end depends on the back-end.
+
+### Stopping the Stack
+To stop all services:
+
+```sh
+docker compose down
+```
+
+---
+
+_Refer to the `compose.yaml` and individual service Dockerfiles for further customization or advanced usage._

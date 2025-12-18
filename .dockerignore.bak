@@ -1,0 +1,88 @@
+# --- Version control ---
+.git/
+.gitignore
+.svn/
+.hg/
+
+# --- IDE/editor files ---
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# --- Node.js ---
+node_modules/
+**/node_modules/
+npm-debug.log
+yarn-debug.log
+
+# --- Python ---
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.coverage
+
+# --- Build outputs ---
+dist/
+**/dist/
+build/
+**/build/
+out/
+**/out/
+
+# --- Test and debug ---
+test/
+**/test/
+tests/
+**/tests/
+debug/
+**/debug/
+*.log
+
+# --- Temporary and local files ---
+tmp/
+**/tmp/
+temp/
+**/temp/
+*.tmp
+.local/
+**/.local/
+local/
+**/local/
+
+# --- Environment and secrets ---
+.env
+.env.*
+*.env
+*.pem
+*.key
+*.crt
+config.local.*
+*.local.yml
+
+# --- Documentation ---
+docs/
+**/docs/
+*.md
+README*
+LICENSE*
+
+# --- Docker and Compose files ---
+Dockerfile*
+docker-compose*
+
+# --- Project-specific ---
+back-end/uploads/
+front-end/public/images/
+image-service/uploads/
+
+# --- Miscellaneous ---
+*.bak
+*.old
+
+# --- Exclusions (if needed, uncomment and adjust) ---
+#!back-end/package.json
+#!front-end/package.json
+#!image-service/requirements.txt

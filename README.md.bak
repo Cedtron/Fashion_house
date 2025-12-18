@@ -1,0 +1,41 @@
+## Running the Project with Docker
+
+This project is composed of three main services: back-end (NestJS), front-end (React/Vite), and an image service (Python). Each service has its own Dockerfile and is orchestrated via Docker Compose.
+
+### Project-Specific Docker Requirements
+- **Node.js Version:** All Node-based services use `node:22.13.1-slim` (as specified in Dockerfiles).
+- **Python Version:** The image service uses `python:3.11-slim`.
+- **Dependencies:**
+  - Node services use `npm ci` for deterministic installs.
+  - Python service installs dependencies from `requirements.txt` into a virtual environment (`.venv`).
+
+### Environment Variables
+- **Front-end:** Requires a `.env` file in `./front-end` (referenced in `docker-compose.yml`).
+- **Back-end:** Optionally supports a `.env` file in `./back-end` (uncomment `env_file` in `docker-compose.yml` if present).
+
+### Build and Run Instructions
+1. Ensure Docker and Docker Compose are installed.
+2. Place any required `.env` files in `./front-end` and (optionally) `./back-end`.
+3. From the project root, build and start all services:
+   ```sh
+   docker compose up --build
+   ```
+   This will build and start:
+   - `node-back-end` (NestJS API)
+   - `node-front-end` (React/Vite UI)
+   - `python-image-service` (Python image API)
+
+### Ports Exposed
+- **Back-end:** `3000` (http://localhost:3000)
+- **Front-end:** `5173` (http://localhost:5173)
+- **Image Service:** `8000` (http://localhost:8000)
+
+### Special Configuration
+- All services run as non-root users for security (see Dockerfiles).
+- The front-end service requires its `.env` file for configuration.
+- The back-end service can use a `.env` file if needed; update `docker-compose.yml` to enable.
+- All services are connected via a custom Docker network (`app-network`).
+- The image service's `uploads/stock/` directory is included in the container (empty by default).
+
+---
+_This section was updated to reflect the current Docker setup. Please ensure your environment files and any required configuration are present before building the containers._

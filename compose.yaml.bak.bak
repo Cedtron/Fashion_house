@@ -1,0 +1,45 @@
+services:
+  ts-back-end:
+    build:
+      context: ./back-end
+    restart: unless-stopped
+    init: true
+    # If your back-end requires environment variables, add them here or use env_file
+    # env_file: ./back-end/.env  # Uncomment if .env file exists
+    ports:
+      - "3000:3000"  # Exposed by Dockerfile, default NestJS port
+    networks:
+      - app-network
+    depends_on:
+      - py-image-service
+    # If your back-end requires a database or other services, add them to depends_on
+
+  ts-front-end:
+    build:
+      context: ./front-end
+    restart: unless-stopped
+    init: true
+    # env_file: ./front-end/.env  # Uncomment if .env file exists
+    ports:
+      - "5173:5173"  # Exposed by Dockerfile, Vite default port
+    networks:
+      - app-network
+    depends_on:
+      - ts-back-end
+    # If your front-end needs to talk to the back-end, ensure CORS is configured
+
+  py-image-service:
+    build:
+      context: ./image-service
+    restart: unless-stopped
+    # If your image service requires environment variables, add them here or use env_file
+    # env_file: ./image-service/.env  # Uncomment if .env file exists
+    ports:
+      - "8000:8000"  # Exposed by Dockerfile, typical for Python web services
+    networks:
+      - app-network
+
+# Shared network for inter-service communication
+networks:
+  app-network:
+    driver: bridge

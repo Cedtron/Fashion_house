@@ -55,13 +55,17 @@ export default function NotificationDropdown() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  // Load notifications from localStorage on mount
+  // Load notifications and cleared IDs from localStorage on mount
   useEffect(() => {
     const savedNotifications = localStorage.getItem('stock-notifications');
+    const clearedIds = JSON.parse(localStorage.getItem('cleared-notification-ids') || '[]');
+    
     if (savedNotifications) {
       try {
         const parsed = JSON.parse(savedNotifications);
-        const notificationsWithDates = parsed.map((n: any) => ({
+        // Filter out cleared notifications
+        const filtered = parsed.filter((n: any) => !clearedIds.includes(n.id) && !clearedIds.includes(n.trackingId));
+        const notificationsWithDates = filtered.map((n: any) => ({
           ...n,
           timestamp: new Date(n.timestamp)
         }));
@@ -89,10 +93,15 @@ export default function NotificationDropdown() {
         createNotificationFromTracking(tracking)
       );
 
-      // Merge with existing notifications, avoid duplicates
+      // Get cleared notification IDs to prevent re-adding
+      const clearedIds = JSON.parse(localStorage.getItem('cleared-notification-ids') || '[]');
+      
+      // Merge with existing notifications, avoid duplicates and cleared ones
       const existingIds = new Set(notifications.map(n => n.trackingId));
       const newNotifications = apiNotifications.filter(notification => 
-        !existingIds.has(notification.trackingId)
+        !existingIds.has(notification.trackingId) &&
+        !clearedIds.includes(notification.id) &&
+        !clearedIds.includes(notification.trackingId)
       );
 
       if (newNotifications.length > 0) {
@@ -238,8 +247,20 @@ export default function NotificationDropdown() {
     closeDropdown();
   };
 
-  // Clear single notification
+  // Clear single notification permanently
   const clearNotification = (id: number) => {
+    // Get current cleared IDs
+    const clearedIds = JSON.parse(localStorage.getItem('cleared-notification-ids') || '[]');
+    
+    // Find the notification to get its trackingId
+    const notification = notifications.find(n => n.id === id);
+    if (notification) {
+      // Add both id and trackingId to cleared list to prevent re-adding
+      const newClearedIds = [...new Set([...clearedIds, id, notification.trackingId])];
+      localStorage.setItem('cleared-notification-ids', JSON.stringify(newClearedIds));
+    }
+    
+    // Remove from state
     setNotifications(prev => prev.filter(notification => notification.id !== id));
   };
 

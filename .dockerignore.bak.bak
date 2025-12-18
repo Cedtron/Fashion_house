@@ -1,0 +1,103 @@
+# Version control
+.git/
+.gitignore
+.svn/
+.hg/
+
+# IDE/editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Node.js
+node_modules/
+npm-debug.log
+yarn-debug.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.coverage
+venv/
+
+# Build outputs
+# (project-specific: dist/ for back-end, build/ for front-end)
+dist/
+build/
+out/
+
+# Test files and folders
+test/
+tests/
+*.test
+
+# Debug and log files
+debug/
+*.log
+
+# Environment and secrets
+.env*
+*.env
+*.pem
+*.key
+*.crt
+config.local.*
+*.local.yml
+
+# Temporary and local files
+tmp/
+temp/
+*.tmp
+.local/
+local/
+
+# Documentation and markdown
+docs/
+*.md
+README*
+LICENSE*
+
+# Docker and compose files
+Dockerfile*
+docker-compose*
+compose.yaml
+
+# Project-specific uploads (ignore empty folders, keep content)
+# If you want to keep uploaded files, do not ignore uploads/
+# Otherwise, uncomment the next line:
+# uploads/
+
+# Miscellaneous
+*.bak
+*.orig
+
+# Ignore Go artifacts (if any)
+/vendor/
+.go-cache/
+*.test
+
+# Ignore Java artifacts (if any)
+target/
+*.class
+.gradle/
+
+# Ignore image-service Python cache
+image-service/__pycache__/
+image-service/venv/
+
+# Ignore front-end node_modules
+front-end/node_modules/
+
+# Ignore back-end node_modules
+back-end/node_modules/
+
+# Ignore back-end temp folder
+back-end/temp/
+
+# Ignore image-service uploads if not needed
+# image-service/uploads/
+
+# End of .dockerignore

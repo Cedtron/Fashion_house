@@ -39,8 +39,8 @@ export class Stock {
   @OneToMany(() => StockTracking, (tracking) => tracking.stock, { cascade: true })
   tracking: StockTracking[];
 
-   @Column({ nullable: true })
-  hash: string; // we'll store image hash here
+@Column({ nullable: true })
+imageHash: string;
 
   @CreateDateColumn()
   createdAt: Date;

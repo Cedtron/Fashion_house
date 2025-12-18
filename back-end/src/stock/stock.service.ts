@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Stock } from '../entities/stock.entity';
@@ -11,20 +11,15 @@ import { StockTrackingService } from './stock-tracking.service';
 import { StockAction, StockTracking } from '../entities/stock-tracking.entity';
 import { existsSync, unlinkSync } from 'fs';
 
-// Try importing as CommonJS module
-let imageHash: any;
+// =============== FIXED JIMP IMPORT ===============
+// Using CommonJS require for Jimp to avoid ES module issues
+let Jimp: any;
 
 try {
-  // This handles both ESM and CommonJS imports
-  imageHash = require('image-hash');
-  // If it has a default export, use it
-  if (imageHash && imageHash.default) {
-    imageHash = imageHash.default;
-  }
+  Jimp = require('jimp');
 } catch (error) {
-  console.error('Error importing image-hash:', error);
-  // Fallback - mock function if module fails to load
-  imageHash = () => {};
+  console.error('Error loading Jimp:', error);
+  Jimp = null;
 }
 
 @Injectable()
@@ -36,10 +31,6 @@ export class StockService {
     private readonly shadeRepository: Repository<Shade>,
     private readonly trackingService: StockTrackingService,
   ) { }
-
-  // Lazy-loaded CLIP embedding pipeline (no TFJS downgrade required)
-  private clipExtractorPromise: Promise<any> | null = null;
-  private readonly embeddingCache = new Map<string, number[]>();
 
   private async generateStockId(): Promise<string> {
     try {
@@ -71,6 +62,18 @@ export class StockService {
 
   async create(createStockDto: CreateStockDto, username: string): Promise<Stock> {
     try {
+      // Prevent duplicate product names (case-insensitive)
+      const existing = await this.stockRepository
+        .createQueryBuilder('stock')
+        .where('LOWER(stock.product) = LOWER(:product)', {
+          product: createStockDto.product,
+        })
+        .getOne();
+
+      if (existing) {
+        throw new BadRequestException('A stock item with this product name already exists');
+      }
+
       // Generate unique stockId first
       const stockId = await this.generateStockId();
 
@@ -136,6 +139,22 @@ export class StockService {
     try {
       const stock = await this.findOne(id);
       const oldData = this.prepareCompleteStockData(stock);
+
+      // If product name is being changed, enforce uniqueness
+      if (
+        updateStockDto.product &&
+        updateStockDto.product.toLowerCase() !== stock.product.toLowerCase()
+      ) {
+        const conflict = await this.stockRepository
+          .createQueryBuilder('s')
+          .where('LOWER(s.product) = LOWER(:product)', { product: updateStockDto.product })
+          .andWhere('s.id != :id', { id })
+          .getOne();
+
+        if (conflict) {
+          throw new BadRequestException('Another stock item already uses this product name');
+        }
+      }
 
       // Track stock changes (exclude shades from stock-level comparison)
       const stockChanges = this.getChangedFields(oldData, updateStockDto);
@@ -594,265 +613,168 @@ export class StockService {
       return changes;
     }
 
-    // Helper method to get image hash as a Promise
-    private async getImageHash(path: string): Promise<string> {
-      return new Promise((resolve, reject) => {
-        // Correct usage based on image-hash documentation
-        // Parameters: (imagePath, bits, callback)
-        imageHash(path, 16, (error: Error, data: string) => {
-          if (error) {
-            console.error('Image hash error:', error);
-            reject(error);
-          } else {
-            resolve(data);
-          }
-        });
-      });
-    }
-
-  // ---------------------------------------------------------------------------
-  // Modern image-similarity helpers (CLIP embeddings via @xenova/transformers)
-  // ---------------------------------------------------------------------------
-  private async getClipExtractor() {
-    if (!this.clipExtractorPromise) {
-      this.clipExtractorPromise = (async () => {
-        try {
-          const { pipeline } = await import('@xenova/transformers');
-          return await pipeline('feature-extraction', 'Xenova/clip-vit-base-patch32');
-        } catch (err) {
-          console.error('Failed to load CLIP pipeline:', err);
-          return null;
-        }
-      })();
-    }
-    return this.clipExtractorPromise;
-  }
-
-  private async getImageEmbedding(imagePath: string): Promise<number[] | null> {
-    const extractor = await this.getClipExtractor();
-    if (!extractor) return null;
-
+  // =============== FIXED IMAGE HASH METHOD ===============
+  private async getImageHash(pathOrBuffer: string | any): Promise<string> {
     try {
-      // pooling + normalize returns a single vector we can cosine-compare
-      const output = await extractor(imagePath, {
-        pooling: 'mean',
-        normalize: true,
-      });
+      if (!Jimp) {
+        throw new Error('Jimp library is not available');
+      }
 
-      const data =
-        (output as any)?.data ??
-        (output as any)?.tensor?.data ??
-        (Array.isArray(output) ? output : null);
-
-      if (!data) return null;
-
-      const arr = Array.from(data as Iterable<number>);
-      // Cache by path to avoid recomputing on repeated searches
-      this.embeddingCache.set(imagePath, arr);
-      return arr;
-    } catch (err) {
-      console.error('Failed to compute embedding for', imagePath, err);
-      return null;
+      // Load image - Jimp can handle both file paths and buffers
+      let image;
+      // Check if it's a Buffer (Node.js global)
+      if (pathOrBuffer && typeof pathOrBuffer === 'object' && pathOrBuffer.constructor && pathOrBuffer.constructor.name === 'Buffer') {
+        // If it's a buffer, use it directly
+        image = await Jimp.read(pathOrBuffer);
+      } else if (typeof pathOrBuffer === 'string') {
+        // If it's a path, check if file exists first
+        if (!existsSync(pathOrBuffer)) {
+          throw new Error(`Image file not found: ${pathOrBuffer}`);
+        }
+        image = await Jimp.read(pathOrBuffer);
+      } else {
+        throw new Error('Invalid input: must be a file path (string) or Buffer');
+      }
+      
+      // Resize to 8x8 pixels for hash calculation (standard for perceptual hash)
+      image.resize(8, 8, Jimp.RESIZE_BILINEAR);
+      
+      // Convert to grayscale to focus on structure, not color
+      image.greyscale();
+      
+      // Get image data
+      const width = image.bitmap.width;
+      const height = image.bitmap.height;
+      
+      // Calculate average pixel value
+      let total = 0;
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const pixel = Jimp.intToRGBA(image.getPixelColor(x, y));
+          total += pixel.r; // Using red channel since image is grayscale
+        }
+      }
+      
+      const average = total / (width * height);
+      
+      // Generate hash string: 1 for pixels above average, 0 for below
+      let hash = '';
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const pixel = Jimp.intToRGBA(image.getPixelColor(x, y));
+          hash += pixel.r > average ? '1' : '0';
+        }
+      }
+      
+      return hash;
+    } catch (error) {
+      console.error('Error generating image hash with Jimp:', error);
+      throw new Error(`Failed to generate image hash: ${error.message}`);
     }
   }
 
-  private cosineSimilarity(a: number[], b: number[]): number {
-    if (!a?.length || !b?.length || a.length !== b.length) return -1;
-    let dot = 0;
-    let normA = 0;
-    let normB = 0;
+  // =============== IMPROVED HAMMING DISTANCE METHOD ===============
+  private hammingDistance(a: string, b: string): number {
+    if (!a || !b || a.length !== b.length) {
+      return Number.MAX_SAFE_INTEGER; // Very large distance for invalid comparison
+    }
+    
+    let dist = 0;
     for (let i = 0; i < a.length; i++) {
-      dot += a[i] * b[i];
-      normA += a[i] * a[i];
-      normB += b[i] * b[i];
+      if (a[i] !== b[i]) dist++;
     }
-    if (normA === 0 || normB === 0) return -1;
-    return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+    return dist;
   }
 
-    async searchByPhoto(uploadedPath: string): Promise<Stock[]> {
-      const cleanup = () => {
-        try {
-          if (existsSync(uploadedPath)) {
-            unlinkSync(uploadedPath);
-          }
-        } catch (err) {
-          console.error('Failed to clean uploaded file:', err);
-        }
-      };
+ // ---------------- Image-based stock search using stored hashes (60% MATCH) ----------------
+async searchByPhoto(imagePath: string): Promise<any[]> {
+  try {
+    // 1️⃣ Hash uploaded image (from disk)
+    const queryHash = await this.getImageHash(imagePath);
 
-      try {
-        const stocks = await this.stockRepository.find({
-          relations: ['shades'],
+    // 2️⃣ Load stocks with image hashes
+    const stocks = await this.stockRepository.find({
+      relations: ['shades'],
+    });
+
+    const candidates = stocks.filter(
+      s => s.imageHash && s.imageHash.length === queryHash.length,
+    );
+
+    if (!candidates.length) {
+      return [];
+    }
+
+    const results = [];
+
+    // 3️⃣ Compare hashes → similarity %
+    for (const stock of candidates) {
+      const distance = this.hammingDistance(queryHash, stock.imageHash);
+
+      const similarity =
+        (1 - distance / queryHash.length) * 100;
+
+      if (similarity >= 60) {
+        results.push({
+          ...stock,
+          similarity: Math.round(similarity),
         });
-
-      // First try CLIP embedding similarity for better recall/precision
-      const uploadedEmbedding =
-        this.embeddingCache.get(uploadedPath) ??
-        (await this.getImageEmbedding(uploadedPath));
-
-      if (uploadedEmbedding && uploadedEmbedding.length) {
-        const clipMatches: { stock: Stock; score: number }[] = [];
-
-        for (const stock of stocks) {
-          if (!stock.imagePath) continue;
-          const fullPath = `.${stock.imagePath}`;
-
-          const cached = this.embeddingCache.get(fullPath);
-          const stockEmbedding =
-            cached ?? (await this.getImageEmbedding(fullPath));
-
-          if (!stockEmbedding) continue;
-
-          const sim = this.cosineSimilarity(uploadedEmbedding, stockEmbedding);
-          // CLIP similarities are in [-1,1]; closer to 1 is better
-          if (sim >= 0.75) {
-            clipMatches.push({ stock, score: sim });
-          }
-        }
-
-        if (clipMatches.length) {
-          clipMatches.sort((a, b) => b.score - a.score);
-          return clipMatches.map((m) => m.stock);
-        }
-        // fall through to hash if embeddings produced but no close matches
       }
+    }
 
-      // Fallback to perceptual hash if CLIP unavailable or no matches found
-      let uploadedHash: string;
+    // 4️⃣ Best matches first
+    results.sort((a, b) => b.similarity - a.similarity);
+
+    return results;
+  } catch (error) {
+    console.error('Error searching by photo:', error);
+    throw error;
+  } finally {
+    // 5️⃣ Cleanup uploaded search image
+    if (existsSync(imagePath)) {
       try {
-        uploadedHash = await this.getImageHash(uploadedPath);
-        console.log('Uploaded image hash:', uploadedHash);
-      } catch (error) {
-        console.error('Error hashing uploaded image:', error);
-        return []; // Return empty array if upload hash fails
-      }
-
-      const hashMatches: { stock: Stock; score: number }[] = [];
-
-      for (const stock of stocks) {
-        if (!stock.imagePath) continue;
-
-        const fullPath = `.${stock.imagePath}`;
-        try {
-          const stockHash: string = await this.getImageHash(fullPath);
-
-          // Compare hamming distance between hashes
-          const score = this.hammingDistance(uploadedHash, stockHash);
-          console.log(`Stock ${stock.stockId} hash score:`, score);
-
-          if (score < 25) { // lower = more similar
-            hashMatches.push({ stock, score });
-          }
-        } catch (error) {
-          console.log('Hash error for', fullPath, error);
-          continue;
-        }
-      }
-
-      // Sort best match first
-      hashMatches.sort((a, b) => a.score - b.score);
-
-      return hashMatches.map(m => m.stock);
-      } catch (error) {
-        console.error('Error in searchByPhoto:', error);
-        return [];
-      } finally {
-        cleanup();
+        unlinkSync(imagePath);
+      } catch (e) {
+        console.error('Failed to cleanup search image:', e);
       }
     }
+  }
+}
+  async adjustStock(id: number, adjustStockDto: AdjustStockDto, username: string): Promise<Stock> {
+    try {
+      const stock = await this.findOne(id);
+      const oldQuantity = stock.quantity;
+      const oldData = this.prepareCompleteStockData(stock);
 
-    private hammingDistance(a: string, b: string): number {
-      let dist = 0;
-      for (let i = 0; i < a.length; i++) {
-        if (a[i] !== b[i]) dist++;
-      }
-      return dist;
-    }
+      stock.quantity += adjustStockDto.quantity;
+      const updatedStock = await this.stockRepository.save(stock);
 
-    async adjustStock(id: number, adjustStockDto: AdjustStockDto, username: string): Promise<Stock> {
-      try {
-        const stock = await this.findOne(id);
-        const oldQuantity = stock.quantity;
-        const oldData = this.prepareCompleteStockData(stock);
-
-        stock.quantity += adjustStockDto.quantity;
-        const updatedStock = await this.stockRepository.save(stock);
-
-        const completeStock = await this.stockRepository.findOne({
-          where: { id: updatedStock.id },
-          relations: ['shades'],
-        });
-
-        const actionType = adjustStockDto.quantity > 0 ? 'INCREMENT' : 'DECREMENT';
-        const absoluteQuantity = Math.abs(adjustStockDto.quantity);
-
-        await this.trackingService.logAction(
-          completeStock,
-          StockAction.ADJUST,
-          username,
-          `Stock ${actionType}: ${completeStock.product} | ${absoluteQuantity} units | From: ${oldQuantity} → To: ${completeStock.quantity} | Notes: ${adjustStockDto.notes || 'No notes provided'}`,
-          oldData,
-          this.prepareCompleteStockData(completeStock),
-        );
-
-        return completeStock;
-      } catch (error) {
-        console.error('Error adjusting stock:', error);
-        throw error;
-      }
-    }
-
-    async remove(id: number, username: string): Promise<void> {
-      try {
-        const stock = await this.stockRepository.findOne({
-          where: { id },
-          relations: ['shades'],
-        });
-
-        if (!stock) {
-          throw new NotFoundException(`Stock with ID ${id} not found`);
-        }
-
-        const stockData = this.prepareCompleteStockData(stock);
-
-        // DELETE IMAGE FROM DISK
-        if (stock.imagePath) {
-          const imgPath = `.${stock.imagePath}`;
-          if (existsSync(imgPath)) {
-            try {
-              unlinkSync(imgPath);
-              console.log("Deleted image:", imgPath);
-            } catch (err) {
-              console.log("Error deleting image:", err);
-            }
-          }
-        }
-
-        await this.trackingService.logAction(
-          stock,
-          StockAction.DELETE,
-          username,
-          `DELETED: ${stock.product} (${stock.stockId}) and ${stock.shades?.length || 0} associated shades`,
-          stockData,
-          null,
-        );
-
-        await this.stockRepository.remove(stock);
-      } catch (error) {
-        console.error('Error deleting stock:', error);
-        throw error;
-      }
-    }
-
-    async findAll(): Promise<Stock[]> {
-      return await this.stockRepository.find({
+      const completeStock = await this.stockRepository.findOne({
+        where: { id: updatedStock.id },
         relations: ['shades'],
-        order: { createdAt: 'DESC' },
       });
-    }
 
-    async findOne(id: number): Promise<Stock> {
+      const actionType = adjustStockDto.quantity > 0 ? 'INCREMENT' : 'DECREMENT';
+      const absoluteQuantity = Math.abs(adjustStockDto.quantity);
+
+      await this.trackingService.logAction(
+        completeStock,
+        StockAction.ADJUST,
+        username,
+        `Stock ${actionType}: ${completeStock.product} | ${absoluteQuantity} units | From: ${oldQuantity} → To: ${completeStock.quantity} | Notes: ${adjustStockDto.notes || 'No notes provided'}`,
+        oldData,
+        this.prepareCompleteStockData(completeStock),
+      );
+
+      return completeStock;
+    } catch (error) {
+      console.error('Error adjusting stock:', error);
+      throw error;
+    }
+  }
+
+  async remove(id: number, username: string): Promise<void> {
+    try {
       const stock = await this.stockRepository.findOne({
         where: { id },
         relations: ['shades'],
@@ -862,469 +784,527 @@ export class StockService {
         throw new NotFoundException(`Stock with ID ${id} not found`);
       }
 
-      return stock;
-    }
+      const stockData = this.prepareCompleteStockData(stock);
 
-    async search(searchDto: SearchStockDto): Promise<Stock[]> {
-      const query = this.stockRepository.createQueryBuilder('stock')
-        .leftJoinAndSelect('stock.shades', 'shades');
-
-      if (searchDto.name) {
-        query.andWhere('stock.product LIKE :name', { name: `%${searchDto.name}%` });
+      // DELETE IMAGE FROM DISK
+      if (stock.imagePath) {
+        const imgPath = `.${stock.imagePath}`;
+        if (existsSync(imgPath)) {
+          try {
+            unlinkSync(imgPath);
+            console.log("Deleted image:", imgPath);
+          } catch (err) {
+            console.log("Error deleting image:", err);
+          }
+        }
       }
-
-      if (searchDto.category) {
-        query.andWhere('stock.category LIKE :category', { category: `%${searchDto.category}%` });
-      }
-
-      return await query.getMany();
-    }
-
-    async getLowStock(threshold: number = 10): Promise<Stock[]> {
-      return await this.stockRepository
-        .createQueryBuilder('stock')
-        .where('stock.quantity <= :threshold', { threshold })
-        .leftJoinAndSelect('stock.shades', 'shades')
-        .orderBy('stock.quantity', 'ASC')
-        .getMany();
-    }
-
-    async getStockTracking(stockId: number) {
-      return await this.trackingService.getStockTracking(stockId);
-    }
-
-    async getAllTracking() {
-      return await this.trackingService.getRecentActions(1000);
-    }
-
-    async searchByImage(filename: string): Promise<Stock[]> {
-      const query = this.stockRepository.createQueryBuilder('stock')
-        .leftJoinAndSelect('stock.shades', 'shades');
-
-      if (filename && filename.trim().length > 0) {
-        query.where('stock.imagePath LIKE :img', { img: `%${filename}%` });
-      } else {
-        query.where('stock.imagePath IS NOT NULL');
-      }
-
-      return await query.getMany();
-    }
-
-    // ---------- Patch uploadImage to NOT generate embedding ----------
-    async uploadImage(id: number, imagePath: string, username: string): Promise<Stock> {
-      console.log(`Uploading image for stock ${id}: ${imagePath}`);
-      const stock = await this.findOne(id);
-      const oldImagePath = stock.imagePath;
-
-      // Update imagePath in DB only
-      await this.stockRepository.update(id, { imagePath });
-      console.log(`Updated stock ${id} imagePath in DB to: ${imagePath}`);
-
-      // Fetch updated entity
-      const updated = await this.findOne(id);
 
       await this.trackingService.logAction(
-        updated,
-        StockAction.IMAGE_UPLOAD,
-        username,
-        `Image ${oldImagePath ? 'updated' : 'uploaded'} for: ${updated.product} (${updated.stockId})`,
-        { oldImagePath },
-        { newImagePath: imagePath }
-      );
-
-      return updated;
-    }
-
-    // REMOVED: searchByPhotoTensorFlow() method - using only image-hash based search
-
-    // Helper methods
-    private prepareCompleteStockData(stock: Stock): any {
-      return {
-        id: stock.id,
-        stockId: stock.stockId,
-        product: stock.product,
-        category: stock.category,
-        quantity: stock.quantity,
-        cost: stock.cost,
-        price: stock.price,
-        imagePath: stock.imagePath,
-        createdAt: stock.createdAt,
-        updatedAt: stock.updatedAt,
-        shades: stock.shades ? stock.shades.map(shade => ({
-          id: shade.id,
-          colorName: shade.colorName,
-          color: shade.color,
-          quantity: shade.quantity,
-          unit: shade.unit,
-          length: shade.length,
-          lengthUnit: shade.lengthUnit,
-          createdAt: shade.createdAt,
-          updatedAt: shade.updatedAt,
-        })) : [],
-      };
-    }
-
-    private getChangedFields(oldData: any, newData: any): any {
-      const changes = {};
-      const trackableFields = ['product', 'category', 'quantity', 'cost', 'price', 'imagePath'];
-
-      trackableFields.forEach(key => {
-        if (oldData[key] !== newData[key]) {
-          changes[key] = {
-            old: oldData[key],
-            new: newData[key]
-          };
-        }
-      });
-
-      return changes;
-    }
-
-    async getStockAlerts(shadeLowThreshold = 5, shadeHighThreshold = 250, stockLowThreshold = 5) {
-      const stocks = await this.stockRepository.find({
-        relations: ['shades'],
-      });
-
-      const lowShadeAlerts = [];
-      const highShadeAlerts = [];
-      const lowStocks = [];
-
-      for (const stock of stocks) {
-        if (stock.shades && stock.shades.length > 0) {
-          for (const shade of stock.shades) {
-            if (shade.quantity <= shadeLowThreshold) {
-              lowShadeAlerts.push({
-                stockId: stock.id,
-                stockCode: stock.stockId,
-                product: stock.product,
-                shadeId: shade.id,
-                shadeName: shade.colorName,
-                quantity: shade.quantity,
-              });
-            } else if (shade.quantity >= shadeHighThreshold) {
-              highShadeAlerts.push({
-                stockId: stock.id,
-                stockCode: stock.stockId,
-                product: stock.product,
-                shadeId: shade.id,
-                shadeName: shade.colorName,
-                quantity: shade.quantity,
-              });
-            }
-          }
-        } else if (stock.quantity <= stockLowThreshold) {
-          lowStocks.push({
-            stockId: stock.id,
-            stockCode: stock.stockId,
-            product: stock.product,
-            quantity: stock.quantity,
-          });
-        }
-      }
-
-      return {
-        thresholds: {
-          shadeLow: shadeLowThreshold,
-          shadeHigh: shadeHighThreshold,
-          stockLow: stockLowThreshold,
-        },
-        counts: {
-          lowShades: lowShadeAlerts.length,
-          highShades: highShadeAlerts.length,
-          lowStocks: lowStocks.length,
-        },
-        lowShadeAlerts,
-        highShadeAlerts,
-        lowStocks,
-      };
-    }
-
-    async getInventorySummary() {
-      const stocks = await this.stockRepository.find({
-        relations: ['shades'],
-      });
-
-      const trackingResponse = await this.trackingService.getAllTracking(5000, 0);
-      const trackingMap = new Map<number, StockTracking[]>();
-      trackingResponse.data.forEach((entry) => {
-        if (!trackingMap.has(entry.stockId)) {
-          trackingMap.set(entry.stockId, []);
-        }
-        trackingMap.get(entry.stockId).push(entry);
-      });
-
-      const items = stocks.map((stock) =>
-        this.buildMovementItem(stock, trackingMap.get(stock.id) || []),
-      );
-
-      const totals = {
-        totalProducts: items.length,
-        withShades: items.filter((item) => item.hasShades).length,
-        withoutShades: items.filter((item) => !item.hasShades).length,
-        totalShades: items.reduce((sum, item) => sum + item.shadeDetails.totalShades, 0),
-        totalAdded: items.reduce((sum, item) => sum + item.totalAdded, 0),
-        totalRemoved: items.reduce((sum, item) => sum + item.totalRemoved, 0),
-        currentStock: items.reduce((sum, item) => sum + item.currentStock, 0),
-      };
-
-      return { totals, items };
-    }
-
-    async getStockActivitySummary(stockId: number) {
-      const stock = await this.findOne(stockId);
-      const tracking = await this.trackingService.getStockTracking(stockId);
-
-      const quantityChanges = tracking
-        .map((entry) => this.extractQuantityChange(entry))
-        .filter((change) => change.changeAmount !== 0);
-
-      const summary = {
-        totalActivities: tracking.length,
-        created: tracking.filter((t) => t.action === StockAction.CREATE).length,
-        updated: tracking.filter((t) => t.action === StockAction.UPDATE).length,
-        adjusted: tracking.filter((t) => t.action === StockAction.ADJUST).length,
-        deleted: tracking.filter((t) => t.action === StockAction.DELETE).length,
-        totalShades: stock.shades?.length || 0,
-        totalShadeQuantity: stock.shades?.reduce((sum, shade) => sum + (shade.quantity || 0), 0) || 0,
-        totalShadeLength: stock.shades?.reduce((sum, shade) => sum + (shade.length || 0), 0) || 0,
-      };
-
-      const shadeAnalytics = this.aggregateShadeAnalytics(stock.shades || [], tracking);
-      const activityByPeriod = this.buildActivityByPeriod(tracking);
-
-      return {
         stock,
-        tracking,
-        summary,
-        quantityChanges,
-        shadeAnalytics,
-        activityByPeriod,
-      };
-    }
-
-    private buildMovementItem(stock: Stock, entries: StockTracking[]) {
-      const sortedEntries = [...entries].sort(
-        (a, b) => new Date(b.performedAt).getTime() - new Date(a.performedAt).getTime(),
+        StockAction.DELETE,
+        username,
+        `DELETED: ${stock.product} (${stock.stockId}) and ${stock.shades?.length || 0} associated shades`,
+        stockData,
+        null,
       );
-      const hasShades = stock.shades && stock.shades.length > 0;
-      const currentStock = hasShades
-        ? stock.shades.reduce((sum, shade) => sum + (shade.quantity || 0), 0)
-        : stock.quantity;
 
-      let totalAdded = 0;
-      let totalRemoved = 0;
-      const quantityChanges = [];
-
-      sortedEntries.forEach((entry) => {
-        const change = this.extractQuantityChange(entry);
-        if (change.changeAmount > 0) {
-          if (change.changeType === 'increase') {
-            totalAdded += change.changeAmount;
-          } else if (change.changeType === 'decrease') {
-            totalRemoved += change.changeAmount;
-          }
-          quantityChanges.push(change);
-        }
-      });
-
-      return {
-        stockId: stock.stockId,
-        product: stock.product,
-        category: stock.category,
-        currentStock,
-        totalAdded,
-        totalRemoved,
-        netChange: totalAdded - totalRemoved,
-        lastActivity: sortedEntries[0]?.performedAt || stock.updatedAt,
-        lastAction: sortedEntries[0]?.action || StockAction.CREATE,
-        cost: stock.cost,
-        price: stock.price,
-        stockItem: stock,
-        hasShades,
-        shadeDetails: {
-          totalShades: stock.shades?.length || 0,
-          shadeQuantities:
-            stock.shades?.map((shade) => ({
-              colorName: shade.colorName,
-              quantity: shade.quantity,
-              color: shade.color,
-            })) || [],
-        },
-        quantityChanges,
-        updatedAt: stock.updatedAt,
-        createdAt: stock.createdAt,
-      };
-    }
-
-    private extractQuantityChange(entry: StockTracking) {
-      let oldQuantity: number | null = null;
-      let newQuantity: number | null = null;
-      let changeAmount = 0;
-      let changeType: 'increase' | 'decrease' | 'none' = 'none';
-      let isShadeUpdate = false;
-      let shadeName: string | undefined;
-
-      if (
-        typeof entry?.oldData?.quantity === 'number' &&
-        typeof entry?.newData?.quantity === 'number'
-      ) {
-        oldQuantity = entry.oldData.quantity;
-        newQuantity = entry.newData.quantity;
-        changeAmount = Math.abs(newQuantity - oldQuantity);
-        if (newQuantity > oldQuantity) {
-          changeType = 'increase';
-        } else if (newQuantity < oldQuantity) {
-          changeType = 'decrease';
-        }
-      } else if (
-        entry?.oldData?.colorName &&
-        typeof entry?.oldData?.quantity === 'number' &&
-        typeof entry?.newData?.quantity === 'number'
-      ) {
-        oldQuantity = entry.oldData.quantity;
-        newQuantity = entry.newData.quantity;
-        changeAmount = Math.abs(newQuantity - oldQuantity);
-        if (newQuantity > oldQuantity) {
-          changeType = 'increase';
-        } else if (newQuantity < oldQuantity) {
-          changeType = 'decrease';
-        }
-        isShadeUpdate = true;
-        shadeName = entry.oldData.colorName || entry.newData.colorName;
-      } else if (entry.description) {
-        const match = entry.description.match(/(\d+)\s*→\s*(\d+)/);
-        if (match) {
-          oldQuantity = parseInt(match[1], 10);
-          newQuantity = parseInt(match[2], 10);
-          changeAmount = Math.abs(newQuantity - oldQuantity);
-          changeType = newQuantity > oldQuantity ? 'increase' : 'decrease';
-        }
-      }
-
-      return {
-        oldQuantity,
-        newQuantity,
-        changeAmount,
-        changeType,
-        performedAt: entry.performedAt,
-        performedBy: entry.performedBy,
-        action: entry.action,
-        description: entry.description,
-        isShadeUpdate,
-        shadeName,
-      };
-    }
-
-    private aggregateShadeAnalytics(shades: Shade[], tracking: StockTracking[]) {
-      const analyticsMap = new Map<number, any>();
-
-      shades.forEach((shade) => {
-        analyticsMap.set(shade.id, {
-          shadeId: shade.id,
-          colorName: shade.colorName,
-          color: shade.color,
-          currentQuantity: shade.quantity,
-          currentLength: shade.length,
-          unit: shade.unit,
-          lengthUnit: shade.lengthUnit,
-          totalReductions: 0,
-          totalAdditions: 0,
-          reductionCount: 0,
-          additionCount: 0,
-          lastUpdated: shade.updatedAt,
-        });
-      });
-
-      tracking.forEach((entry) => {
-        if (
-          entry.oldData?.colorName &&
-          typeof entry.oldData?.quantity === 'number' &&
-          typeof entry.newData?.quantity === 'number'
-        ) {
-          const shadeId = entry.oldData.id || entry.newData?.id;
-          if (!shadeId) return;
-
-          if (!analyticsMap.has(shadeId)) {
-            analyticsMap.set(shadeId, {
-              shadeId,
-              colorName: entry.oldData.colorName,
-              color: entry.oldData.color,
-              currentQuantity: entry.newData.quantity,
-              currentLength: entry.newData.length,
-              unit: entry.newData.unit,
-              lengthUnit: entry.newData.lengthUnit,
-              totalReductions: 0,
-              totalAdditions: 0,
-              reductionCount: 0,
-              additionCount: 0,
-              lastUpdated: entry.performedAt,
-            });
-          }
-
-          const analytics = analyticsMap.get(shadeId);
-          const delta = entry.newData.quantity - entry.oldData.quantity;
-          if (delta > 0) {
-            analytics.totalAdditions += delta;
-            analytics.additionCount += 1;
-          } else if (delta < 0) {
-            analytics.totalReductions += Math.abs(delta);
-            analytics.reductionCount += 1;
-          }
-          analytics.currentQuantity = entry.newData.quantity;
-          analytics.currentLength = entry.newData.length;
-          analytics.lastUpdated = entry.performedAt;
-        }
-      });
-
-      return Array.from(analyticsMap.values());
-    }
-
-    private buildActivityByPeriod(tracking: StockTracking[]) {
-      const buckets = new Map<string, any>();
-
-      tracking.forEach((entry) => {
-        const date = new Date(entry.performedAt);
-        const key = `${date.getFullYear()}-${date.getMonth() + 1}`;
-        if (!buckets.has(key)) {
-          buckets.set(key, {
-            period: new Date(date.getFullYear(), date.getMonth(), 1),
-            stockAdded: 0,
-            stockReduced: 0,
-            shadesAdded: 0,
-            shadesRemoved: 0,
-            activities: 0,
-          });
-        }
-        const bucket = buckets.get(key);
-        bucket.activities += 1;
-
-        const change = this.extractQuantityChange(entry);
-        if (change.changeAmount > 0) {
-          if (change.isShadeUpdate) {
-            if (change.changeType === 'increase') {
-              bucket.shadesAdded += change.changeAmount;
-            } else {
-              bucket.shadesRemoved += change.changeAmount;
-            }
-          } else {
-            if (change.changeType === 'increase') {
-              bucket.stockAdded += change.changeAmount;
-            } else {
-              bucket.stockReduced += change.changeAmount;
-            }
-          }
-        }
-      });
-
-      return Array.from(buckets.values())
-        .sort((a, b) => a.period.getTime() - b.period.getTime())
-        .map((bucket) => ({
-          period: bucket.period.toISOString(),
-          stockAdded: bucket.stockAdded,
-          stockReduced: bucket.stockReduced,
-          shadesAdded: bucket.shadesAdded,
-          shadesRemoved: bucket.shadesRemoved,
-          activities: bucket.activities,
-        }));
+      await this.stockRepository.remove(stock);
+    } catch (error) {
+      console.error('Error deleting stock:', error);
+      throw error;
     }
   }
+
+  async findAll(): Promise<Stock[]> {
+    return await this.stockRepository.find({
+      relations: ['shades'],
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  async findOne(id: number): Promise<Stock> {
+    const stock = await this.stockRepository.findOne({
+      where: { id },
+      relations: ['shades'],
+    });
+
+    if (!stock) {
+      throw new NotFoundException(`Stock with ID ${id} not found`);
+    }
+
+    return stock;
+  }
+
+  async search(searchDto: SearchStockDto): Promise<Stock[]> {
+    const query = this.stockRepository.createQueryBuilder('stock')
+      .leftJoinAndSelect('stock.shades', 'shades');
+
+    if (searchDto.name) {
+      query.andWhere('stock.product LIKE :name', { name: `%${searchDto.name}%` });
+    }
+
+    if (searchDto.category) {
+      query.andWhere('stock.category LIKE :category', { category: `%${searchDto.category}%` });
+    }
+
+    return await query.getMany();
+  }
+
+  async getLowStock(threshold: number = 10): Promise<Stock[]> {
+    return await this.stockRepository
+      .createQueryBuilder('stock')
+      .where('stock.quantity <= :threshold', { threshold })
+      .leftJoinAndSelect('stock.shades', 'shades')
+      .orderBy('stock.quantity', 'ASC')
+      .getMany();
+  }
+
+  async getStockTracking(stockId: number) {
+    return await this.trackingService.getStockTracking(stockId);
+  }
+
+  async getAllTracking() {
+    return await this.trackingService.getRecentActions(1000);
+  }
+
+  async searchByImage(filename: string): Promise<Stock[]> {
+    const query = this.stockRepository.createQueryBuilder('stock')
+      .leftJoinAndSelect('stock.shades', 'shades');
+
+    if (filename && filename.trim().length > 0) {
+      query.where('stock.imagePath LIKE :img', { img: `%${filename}%` });
+    } else {
+      query.where('stock.imagePath IS NOT NULL');
+    }
+
+    return await query.getMany();
+  }
+
+  // Upload image, compute image hash locally, and store both path + hash
+async uploadImage(
+  id: number,
+  imagePath: string,
+  username: string,
+): Promise<Stock> {
+  const stock = await this.findOne(id);
+
+  const fullPath = `.${imagePath}`;
+
+  if (!existsSync(fullPath)) {
+    throw new NotFoundException(
+      `Image file not found at path: ${fullPath}`,
+    );
+  }
+
+  // 🔥 HASH IMAGE (ONCE, HERE)
+  const imageHash = await this.getImageHash(fullPath);
+
+  stock.imagePath = imagePath;
+  stock.imageHash = imageHash;
+
+  await this.stockRepository.save(stock);
+
+  await this.trackingService.logAction(
+    stock,
+    StockAction.IMAGE_UPLOAD,
+    username,
+    'Image uploaded and indexed',
+    { oldImagePath: stock.imagePath },
+    { newImagePath: imagePath },
+  );
+
+  return stock;
+}
+
+  // Helper methods
+  private prepareCompleteStockData(stock: Stock): any {
+    return {
+      id: stock.id,
+      stockId: stock.stockId,
+      product: stock.product,
+      category: stock.category,
+      quantity: stock.quantity,
+      cost: stock.cost,
+      price: stock.price,
+      imagePath: stock.imagePath,
+      imageHash: stock.imageHash,
+      createdAt: stock.createdAt,
+      updatedAt: stock.updatedAt,
+      shades: stock.shades ? stock.shades.map(shade => ({
+        id: shade.id,
+        colorName: shade.colorName,
+        color: shade.color,
+        quantity: shade.quantity,
+        unit: shade.unit,
+        length: shade.length,
+        lengthUnit: shade.lengthUnit,
+        createdAt: shade.createdAt,
+        updatedAt: shade.updatedAt,
+      })) : [],
+    };
+  }
+
+  private getChangedFields(oldData: any, newData: any): any {
+    const changes = {};
+    const trackableFields = ['product', 'category', 'quantity', 'cost', 'price', 'imagePath'];
+
+    trackableFields.forEach(key => {
+      if (oldData[key] !== newData[key]) {
+        changes[key] = {
+          old: oldData[key],
+          new: newData[key]
+        };
+      }
+    });
+
+    return changes;
+  }
+
+  async getStockAlerts(shadeLowThreshold = 5, shadeHighThreshold = 250, stockLowThreshold = 5) {
+    const stocks = await this.stockRepository.find({
+      relations: ['shades'],
+    });
+
+    const lowShadeAlerts = [];
+    const highShadeAlerts = [];
+    const lowStocks = [];
+
+    for (const stock of stocks) {
+      if (stock.shades && stock.shades.length > 0) {
+        for (const shade of stock.shades) {
+          if (shade.quantity <= shadeLowThreshold) {
+            lowShadeAlerts.push({
+              stockId: stock.id,
+              stockCode: stock.stockId,
+              product: stock.product,
+              shadeId: shade.id,
+              shadeName: shade.colorName,
+              quantity: shade.quantity,
+            });
+          } else if (shade.quantity >= shadeHighThreshold) {
+            highShadeAlerts.push({
+              stockId: stock.id,
+              stockCode: stock.stockId,
+              product: stock.product,
+              shadeId: shade.id,
+              shadeName: shade.colorName,
+              quantity: shade.quantity,
+            });
+          }
+        }
+      } else if (stock.quantity <= stockLowThreshold) {
+        lowStocks.push({
+          stockId: stock.id,
+          stockCode: stock.stockId,
+          product: stock.product,
+          quantity: stock.quantity,
+        });
+      }
+    }
+
+    return {
+      thresholds: {
+        shadeLow: shadeLowThreshold,
+        shadeHigh: shadeHighThreshold,
+        stockLow: stockLowThreshold,
+      },
+      counts: {
+        lowShades: lowShadeAlerts.length,
+        highShades: highShadeAlerts.length,
+        lowStocks: lowStocks.length,
+      },
+      lowShadeAlerts,
+      highShadeAlerts,
+      lowStocks,
+    };
+  }
+
+  async getInventorySummary() {
+    const stocks = await this.stockRepository.find({
+      relations: ['shades'],
+    });
+
+    const trackingResponse = await this.trackingService.getAllTracking(5000, 0);
+    const trackingMap = new Map<number, StockTracking[]>();
+    trackingResponse.data.forEach((entry) => {
+      if (!trackingMap.has(entry.stockId)) {
+        trackingMap.set(entry.stockId, []);
+      }
+      trackingMap.get(entry.stockId).push(entry);
+    });
+
+    const items = stocks.map((stock) =>
+      this.buildMovementItem(stock, trackingMap.get(stock.id) || []),
+    );
+
+    const totals = {
+      totalProducts: items.length,
+      withShades: items.filter((item) => item.hasShades).length,
+      withoutShades: items.filter((item) => !item.hasShades).length,
+      totalShades: items.reduce((sum, item) => sum + item.shadeDetails.totalShades, 0),
+      totalAdded: items.reduce((sum, item) => sum + item.totalAdded, 0),
+      totalRemoved: items.reduce((sum, item) => sum + item.totalRemoved, 0),
+      currentStock: items.reduce((sum, item) => sum + item.currentStock, 0),
+    };
+
+    return { totals, items };
+  }
+
+  async getStockActivitySummary(stockId: number) {
+    const stock = await this.findOne(stockId);
+    const tracking = await this.trackingService.getStockTracking(stockId);
+
+    const quantityChanges = tracking
+      .map((entry) => this.extractQuantityChange(entry))
+      .filter((change) => change.changeAmount !== 0);
+
+    const summary = {
+      totalActivities: tracking.length,
+      created: tracking.filter((t) => t.action === StockAction.CREATE).length,
+      updated: tracking.filter((t) => t.action === StockAction.UPDATE).length,
+      adjusted: tracking.filter((t) => t.action === StockAction.ADJUST).length,
+      deleted: tracking.filter((t) => t.action === StockAction.DELETE).length,
+      totalShades: stock.shades?.length || 0,
+      totalShadeQuantity: stock.shades?.reduce((sum, shade) => sum + (shade.quantity || 0), 0) || 0,
+      totalShadeLength: stock.shades?.reduce((sum, shade) => sum + (shade.length || 0), 0) || 0,
+    };
+
+    const shadeAnalytics = this.aggregateShadeAnalytics(stock.shades || [], tracking);
+    const activityByPeriod = this.buildActivityByPeriod(tracking);
+
+    return {
+      stock,
+      tracking,
+      summary,
+      quantityChanges,
+      shadeAnalytics,
+      activityByPeriod,
+    };
+  }
+
+  private buildMovementItem(stock: Stock, entries: StockTracking[]) {
+    const sortedEntries = [...entries].sort(
+      (a, b) => new Date(b.performedAt).getTime() - new Date(a.performedAt).getTime(),
+    );
+    const hasShades = stock.shades && stock.shades.length > 0;
+    const currentStock = hasShades
+      ? stock.shades.reduce((sum, shade) => sum + (shade.quantity || 0), 0)
+      : stock.quantity;
+
+    let totalAdded = 0;
+    let totalRemoved = 0;
+    const quantityChanges = [];
+
+    sortedEntries.forEach((entry) => {
+      const change = this.extractQuantityChange(entry);
+      if (change.changeAmount > 0) {
+        if (change.changeType === 'increase') {
+          totalAdded += change.changeAmount;
+        } else if (change.changeType === 'decrease') {
+          totalRemoved += change.changeAmount;
+        }
+        quantityChanges.push(change);
+      }
+    });
+
+    return {
+      stockId: stock.stockId,
+      product: stock.product,
+      category: stock.category,
+      currentStock,
+      totalAdded,
+      totalRemoved,
+      netChange: totalAdded - totalRemoved,
+      lastActivity: sortedEntries[0]?.performedAt || stock.updatedAt,
+      lastAction: sortedEntries[0]?.action || StockAction.CREATE,
+      cost: stock.cost,
+      price: stock.price,
+      stockItem: stock,
+      hasShades,
+      shadeDetails: {
+        totalShades: stock.shades?.length || 0,
+        shadeQuantities:
+          stock.shades?.map((shade) => ({
+            colorName: shade.colorName,
+            quantity: shade.quantity,
+            color: shade.color,
+          })) || [],
+      },
+      quantityChanges,
+      updatedAt: stock.updatedAt,
+      createdAt: stock.createdAt,
+    };
+  }
+
+  private extractQuantityChange(entry: StockTracking) {
+    let oldQuantity: number | null = null;
+    let newQuantity: number | null = null;
+    let changeAmount = 0;
+    let changeType: 'increase' | 'decrease' | 'none' = 'none';
+    let isShadeUpdate = false;
+    let shadeName: string | undefined;
+
+    if (
+      typeof entry?.oldData?.quantity === 'number' &&
+      typeof entry?.newData?.quantity === 'number'
+    ) {
+      oldQuantity = entry.oldData.quantity;
+      newQuantity = entry.newData.quantity;
+      changeAmount = Math.abs(newQuantity - oldQuantity);
+      if (newQuantity > oldQuantity) {
+        changeType = 'increase';
+      } else if (newQuantity < oldQuantity) {
+        changeType = 'decrease';
+      }
+    } else if (
+      entry?.oldData?.colorName &&
+      typeof entry?.oldData?.quantity === 'number' &&
+      typeof entry?.newData?.quantity === 'number'
+    ) {
+      oldQuantity = entry.oldData.quantity;
+      newQuantity = entry.newData.quantity;
+      changeAmount = Math.abs(newQuantity - oldQuantity);
+      if (newQuantity > oldQuantity) {
+        changeType = 'increase';
+      } else if (newQuantity < oldQuantity) {
+        changeType = 'decrease';
+      }
+      isShadeUpdate = true;
+      shadeName = entry.oldData.colorName || entry.newData.colorName;
+    } else if (entry.description) {
+      const match = entry.description.match(/(\d+)\s*→\s*(\d+)/);
+      if (match) {
+        oldQuantity = parseInt(match[1], 10);
+        newQuantity = parseInt(match[2], 10);
+        changeAmount = Math.abs(newQuantity - oldQuantity);
+        changeType = newQuantity > oldQuantity ? 'increase' : 'decrease';
+      }
+    }
+
+    return {
+      oldQuantity,
+      newQuantity,
+      changeAmount,
+      changeType,
+      performedAt: entry.performedAt,
+      performedBy: entry.performedBy,
+      action: entry.action,
+      description: entry.description,
+      isShadeUpdate,
+      shadeName,
+    };
+  }
+
+  private aggregateShadeAnalytics(shades: Shade[], tracking: StockTracking[]) {
+    const analyticsMap = new Map<number, any>();
+
+    shades.forEach((shade) => {
+      analyticsMap.set(shade.id, {
+        shadeId: shade.id,
+        colorName: shade.colorName,
+        color: shade.color,
+        currentQuantity: shade.quantity,
+        currentLength: shade.length,
+        unit: shade.unit,
+        lengthUnit: shade.lengthUnit,
+        totalReductions: 0,
+        totalAdditions: 0,
+        reductionCount: 0,
+        additionCount: 0,
+        lastUpdated: shade.updatedAt,
+      });
+    });
+
+    tracking.forEach((entry) => {
+      if (
+        entry.oldData?.colorName &&
+        typeof entry.oldData?.quantity === 'number' &&
+        typeof entry.newData?.quantity === 'number'
+      ) {
+        const shadeId = entry.oldData.id || entry.newData?.id;
+        if (!shadeId) return;
+
+        if (!analyticsMap.has(shadeId)) {
+          analyticsMap.set(shadeId, {
+            shadeId,
+            colorName: entry.oldData.colorName,
+            color: entry.oldData.color,
+            currentQuantity: entry.newData.quantity,
+            currentLength: entry.newData.length,
+            unit: entry.newData.unit,
+            lengthUnit: entry.newData.lengthUnit,
+            totalReductions: 0,
+            totalAdditions: 0,
+            reductionCount: 0,
+            additionCount: 0,
+            lastUpdated: entry.performedAt,
+          });
+        }
+
+        const analytics = analyticsMap.get(shadeId);
+        const delta = entry.newData.quantity - entry.oldData.quantity;
+        if (delta > 0) {
+          analytics.totalAdditions += delta;
+          analytics.additionCount += 1;
+        } else if (delta < 0) {
+          analytics.totalReductions += Math.abs(delta);
+          analytics.reductionCount += 1;
+        }
+        analytics.currentQuantity = entry.newData.quantity;
+        analytics.currentLength = entry.newData.length;
+        analytics.lastUpdated = entry.performedAt;
+      }
+    });
+
+    return Array.from(analyticsMap.values());
+  }
+
+  private buildActivityByPeriod(tracking: StockTracking[]) {
+    const buckets = new Map<string, any>();
+
+    tracking.forEach((entry) => {
+      const date = new Date(entry.performedAt);
+      const key = `${date.getFullYear()}-${date.getMonth() + 1}`;
+      if (!buckets.has(key)) {
+        buckets.set(key, {
+          period: new Date(date.getFullYear(), date.getMonth(), 1),
+          stockAdded: 0,
+          stockReduced: 0,
+          shadesAdded: 0,
+          shadesRemoved: 0,
+          activities: 0,
+        });
+      }
+      const bucket = buckets.get(key);
+      bucket.activities += 1;
+
+      const change = this.extractQuantityChange(entry);
+      if (change.changeAmount > 0) {
+        if (change.isShadeUpdate) {
+          if (change.changeType === 'increase') {
+            bucket.shadesAdded += change.changeAmount;
+          } else {
+            bucket.shadesRemoved += change.changeAmount;
+          }
+        } else {
+          if (change.changeType === 'increase') {
+            bucket.stockAdded += change.changeAmount;
+          } else {
+            bucket.stockReduced += change.changeAmount;
+          }
+        }
+      }
+    });
+
+    return Array.from(buckets.values())
+      .sort((a, b) => a.period.getTime() - b.period.getTime())
+      .map((bucket) => ({
+        period: bucket.period.toISOString(),
+        stockAdded: bucket.stockAdded,
+        stockReduced: bucket.stockReduced,
+        shadesAdded: bucket.shadesAdded,
+        shadesRemoved: bucket.shadesRemoved,
+        activities: bucket.activities,
+      }));
+  }
+}

@@ -1,0 +1,44 @@
+services:
+  node-back-end:
+    build:
+      context: ./back-end
+    container_name: node-back-end
+    restart: unless-stopped
+    init: true
+    # If a .env file exists in back-end, uncomment the next line
+    # env_file: ./back-end/.env
+    ports:
+      - "3000:3000"  # Exposed by Dockerfile
+    networks:
+      - app-network
+    depends_on:
+      - python-image-service
+
+  node-front-end:
+    build:
+      context: ./front-end
+    container_name: node-front-end
+    restart: unless-stopped
+    init: true
+    env_file: ./front-end/.env
+    ports:
+      - "5173:5173"  # Exposed by Dockerfile (Vite default)
+    networks:
+      - app-network
+    depends_on:
+      - node-back-end
+      - python-image-service
+
+  python-image-service:
+    build:
+      context: ./image-service
+    container_name: python-image-service
+    restart: unless-stopped
+    ports:
+      - "8000:8000"  # Exposed by Dockerfile
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge

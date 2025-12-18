@@ -22,6 +22,9 @@ export default function SignInForm() {
     setLoading(true);
     setError("");
 
+    const startTime = Date.now();
+    const minLoadingTime = 4000; // 4 seconds minimum
+
     try {
       const res = await api.post("/auth/login", { email, password });
       const data = res.data;
@@ -37,20 +40,37 @@ export default function SignInForm() {
         Cookies.set("user", JSON.stringify(user), { expires: 7, secure: true, sameSite: "strict" });
       }
 
+      // Ensure minimum 4 second loading time
+      const elapsed = Date.now() - startTime;
+      const remaining = Math.max(0, minLoadingTime - elapsed);
+      await new Promise(resolve => setTimeout(resolve, remaining));
+
       navigate("/app");
     } catch (err: unknown) {
       const message =
         (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
         (err instanceof Error ? err.message : "Login failed");
       setError(message);
+      
+      // Ensure minimum loading time even on error
+      const elapsed = Date.now() - startTime;
+      const remaining = Math.max(0, minLoadingTime - elapsed);
+      await new Promise(resolve => setTimeout(resolve, remaining));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="flex items-center justify-center flex-1 py-10 px-4">
-      <div className="w-full max-w-md p-8 bg-white/90 backdrop-blur-xl shadow-xl rounded-2xl border border-white/40">
+    <div className="relative flex items-center justify-center flex-1 py-10 px-4">
+      {/* Full-screen loader overlay while logging in */}
+      {loading && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/70 backdrop-blur-sm">
+          <div className="w-12 h-12 border-4 border-coffee-300 border-t-coffee-700 rounded-full animate-spin" />
+        </div>
+      )}
+
+      <div className="relative w-full max-w-md p-8 bg-white/90 backdrop-blur-xl shadow-xl rounded-2xl border border-white/40">
 
         {/* Title */}
         <div className="mb-6 text-center">

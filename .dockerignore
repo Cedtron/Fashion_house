@@ -1,0 +1,78 @@
+# Version control
+.git/
+.gitignore
+.svn/
+.hg/
+
+# IDE/editor settings
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Node.js dependencies and build artifacts
+node_modules/
+dist/
+build/
+out/
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.coverage
+
+# Go (not detected, but included for completeness)
+/vendor/
+*.test
+.go-cache/
+
+# Java (not detected, but included for completeness)
+target/
+*.class
+.gradle/
+
+# Test and debug files
+test/
+tests/
+debug/
+*.log
+
+# Temporary and local files
+tmp/
+temp/
+*.tmp
+.local/
+local/
+
+# Environment and secrets
+.env
+.env.*
+*.env
+*.pem
+*.key
+*.crt
+config.local.*
+*.local.yml
+
+# Documentation and backups
+docs/
+*.md
+README*
+*.bak
+
+# Docker and Compose files
+Dockerfile*
+docker-compose*
+compose.yaml*
+
+# Project-specific uploads (if not needed in build context)
+# Uncomment if uploads are not required in the image
+#uploads/
+
+# Ignore virtual environments (Python)
+venv/
+
+# Ignore cache and backup files
+*~
