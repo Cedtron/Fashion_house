@@ -166,16 +166,6 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       processAlerts(data.highShadeAlerts, 'HIGH_SHADE');
       processAlerts(data.lowStocks, 'LOW_STOCK');
 
-      setClearedIds(prevCleared => {
-        const newCleared = new Set<string>();
-        for (const key of prevCleared) {
-          if (activeAlertKeys.has(key)) {
-            newCleared.add(key);
-          }
-        }
-        return newCleared;
-      });
-
     } catch (error) {
       console.error('Failed to sync alerts', error);
     }
