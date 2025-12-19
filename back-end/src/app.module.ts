@@ -11,6 +11,7 @@ import { SqlModule } from './sql/sql.module';
 import { StockModule } from './stock/stock.module';
 import { CommonModule } from './common/common.module';
 import { ShadesModule } from './shades/shades.module';
+import { VertexAiModule } from './vertex-ai/vertex-ai.module';
 
 @Module({
   imports: [
@@ -33,9 +34,9 @@ import { ShadesModule } from './shades/shades.module';
     SqlModule,
     StockModule,
     ShadesModule,
+    VertexAiModule
   ],
   controllers: [],
   providers: [],
 })
 export class AppModule {}
-

@@ -44,18 +44,24 @@ interface StockAlertPayload {
   shadeName?: string;
 }
 
-interface AlertsResponse {
-  lowShadeAlerts: StockAlertPayload[];
-  highShadeAlerts: StockAlertPayload[];
-  lowStocks: StockAlertPayload[];
-}
-
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [clearedIds, setClearedIds] = useState<Set<string>>(new Set());
+  const [isLoading, setIsLoading] = useState(true);
   const alertKeysRef = useRef<Set<string>>(new Set());
 
-  // Load notifications from localStorage on mount
   useEffect(() => {
+    let savedCleared: string[] = [];
+    try {
+      const savedClearedRaw = localStorage.getItem('cleared-notification-ids');
+      if (savedClearedRaw) {
+        savedCleared = JSON.parse(savedClearedRaw);
+        setClearedIds(new Set(savedCleared));
+      }
+    } catch (error) {
+      console.error('Error loading cleared notifications:', error);
+    }
+
     const saved = localStorage.getItem('stock-notifications');
     if (saved) {
       try {
@@ -64,21 +70,24 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           ...n,
           timestamp: new Date(n.timestamp)
         }));
-        setNotifications(notificationsWithDates);
-        const keys = parsed
-          .map((n) => n.action)
-          .filter((action): action is string => Boolean(action));
-        alertKeysRef.current = new Set(keys);
+        const filteredNotifications = notificationsWithDates.filter(n => !savedCleared.includes(n.action));
+        setNotifications(filteredNotifications);
+        alertKeysRef.current = new Set(filteredNotifications.map(n => n.action).filter(Boolean));
       } catch (error) {
-        console.error('Error loading notifications from localStorage:', error);
+        console.error('Error loading notifications:', error);
       }
     }
+    setIsLoading(false);
   }, []);
 
-  // Save to localStorage whenever notifications change
   useEffect(() => {
     localStorage.setItem('stock-notifications', JSON.stringify(notifications));
+    alertKeysRef.current = new Set(notifications.map(n => n.action).filter(Boolean));
   }, [notifications]);
+
+  useEffect(() => {
+    localStorage.setItem('cleared-notification-ids', JSON.stringify(Array.from(clearedIds)));
+  }, [clearedIds]);
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
@@ -88,122 +97,98 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   const markAsRead = (id: number) => {
     setNotifications(prev => 
-      prev.map(notification => 
-        notification.id === id ? { ...notification, read: true } : notification
-      )
+      prev.map(n => n.id === id ? { ...n, read: true } : n)
     );
   };
 
   const markAllAsRead = () => {
     setNotifications(prev => 
-      prev.map(notification => ({ ...notification, read: true }))
+      prev.map(n => ({ ...n, read: true }))
     );
   };
 
   const clearNotification = (id: number) => {
-    setNotifications(prev => prev.filter(notification => notification.id !== id));
+    const notification = notifications.find(n => n.id === id);
+    if (notification?.action) {
+      setClearedIds(prev => new Set(prev).add(notification.action));
+    }
+    setNotifications(prev => prev.filter(n => n.id !== id));
   };
 
   const clearAllNotifications = () => {
+    const keysToClear = notifications.map(n => n.action).filter(Boolean);
+    setClearedIds(prev => new Set([...prev, ...keysToClear]));
     setNotifications([]);
-    alertKeysRef.current.clear();
   };
 
-  const pushAlertNotification = (key: string, notification: Notification) => {
-    if (alertKeysRef.current.has(key)) {
+  const pushAlertNotification = useCallback((key: string, notification: Notification) => {
+    if (alertKeysRef.current.has(key) || clearedIds.has(key)) {
       return;
     }
-    alertKeysRef.current.add(key);
     addNotification(notification);
-  };
+  }, [addNotification, clearedIds]);
 
   const syncAlerts = useCallback(async () => {
     try {
       const res = await api.get('/stock/alerts');
       const data = res.data || {};
       const now = Date.now();
+      const activeAlertKeys = new Set<string>();
 
-      (data.lowShadeAlerts || []).forEach((alert: any) => {
-        const key = `LOW_SHADE_${alert.shadeId}`;
-        pushAlertNotification(key, {
-          id: now + alert.shadeId,
-          trackingId: alert.stockId,
-          userName: alert.product,
-          userInitial: alert.product?.[0] || 'S',
-          userColor: '#6F4E37',
-          message: `${alert.product} (${alert.stockCode}) shade ${alert.shadeName} is low (${alert.quantity} units)`,
-          project: alert.stockCode,
-          type: "warning",
-          timestamp: new Date(),
-          read: false,
-          category: "inventory",
-          action: key,
-          stockItem: {
-            id: alert.stockId,
-            stockId: alert.stockCode,
-            product: alert.product,
-            category: "Fabric"
-          }
+      const processAlerts = (alerts: any[], type: string) => {
+        (alerts || []).forEach((alert: any) => {
+          const key = `${type}_${type === 'SHADE' ? alert.shadeId : alert.stockId}`;
+          activeAlertKeys.add(key);
+
+          const message = type === 'LOW_SHADE' ? `${alert.product} (${alert.stockCode}) shade ${alert.shadeName} is low (${alert.quantity} units)`
+            : type === 'HIGH_SHADE' ? `${alert.product} shade ${alert.shadeName} is overstocked (${alert.quantity} units)`
+            : `${alert.product} is low (${alert.quantity} units remaining)`;
+
+          pushAlertNotification(key, {
+            id: now + (alert.shadeId || alert.stockId),
+            trackingId: alert.stockId,
+            userName: alert.product,
+            userInitial: alert.product?.[0] || 'S',
+            userColor: type === 'LOW_SHADE' ? '#6F4E37' : type === 'HIGH_SHADE' ? '#D4AF37' : '#B45309',
+            message,
+            project: alert.stockCode,
+            type: "warning",
+            timestamp: new Date(),
+            read: false,
+            category: "inventory",
+            action: key,
+            stockItem: { id: alert.stockId, stockId: alert.stockCode, product: alert.stock, category: "Stock" }
+          });
         });
+      };
+
+      processAlerts(data.lowShadeAlerts, 'LOW_SHADE');
+      processAlerts(data.highShadeAlerts, 'HIGH_SHADE');
+      processAlerts(data.lowStocks, 'LOW_STOCK');
+
+      setClearedIds(prevCleared => {
+        const newCleared = new Set<string>();
+        for (const key of prevCleared) {
+          if (activeAlertKeys.has(key)) {
+            newCleared.add(key);
+          }
+        }
+        return newCleared;
       });
 
-      (data.highShadeAlerts || []).forEach((alert: any) => {
-        const key = `HIGH_SHADE_${alert.shadeId}`;
-        pushAlertNotification(key, {
-          id: now + alert.shadeId + 1000,
-          trackingId: alert.stockId,
-          userName: alert.product,
-          userInitial: alert.product?.[0] || 'S',
-          userColor: '#D4AF37',
-          message: `${alert.product} shade ${alert.shadeName} is overstocked (${alert.quantity} units)`,
-          project: alert.stockCode,
-          type: "info",
-          timestamp: new Date(),
-          read: false,
-          category: "inventory",
-          action: key,
-          stockItem: {
-            id: alert.stockId,
-            stockId: alert.stockCode,
-            product: alert.product,
-            category: "Fabric"
-          }
-        });
-      });
-
-      (data.lowStocks || []).forEach((item: any) => {
-        const key = `LOW_STOCK_${item.stockId}`;
-        pushAlertNotification(key, {
-          id: now + item.stockId + 2000,
-          trackingId: item.stockId,
-          userName: item.product,
-          userInitial: item.product?.[0] || 'S',
-          userColor: '#B45309',
-          message: `${item.product} is low (${item.quantity} units remaining)`,
-          project: item.stockCode,
-          type: "warning",
-          timestamp: new Date(),
-          read: false,
-          category: "inventory",
-          action: key,
-          stockItem: {
-            id: item.stockId,
-            stockId: item.stockCode,
-            product: item.product,
-            category: "Stock"
-          }
-        });
-      });
     } catch (error) {
       console.error('Failed to sync alerts', error);
     }
-  }, [addNotification]);
+  }, [pushAlertNotification, setClearedIds]);
 
   useEffect(() => {
+    if (isLoading) {
+      return;
+    }
     syncAlerts();
     const interval = setInterval(syncAlerts, 60000);
     return () => clearInterval(interval);
-  }, [syncAlerts]);
+  }, [isLoading, syncAlerts]);
 
   return (
     <NotificationContext.Provider value={{

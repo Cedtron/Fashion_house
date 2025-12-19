@@ -33,12 +33,12 @@ interface NavItem {
 
 // ================= NAV ITEMS =================
 const navItems: NavItem[] = [
-  { iconFilled: <IoGrid />, iconOutline: <IoGridOutline />, name: "Dashboard", path: "/app/" },
+  { iconFilled: <IoGrid />, iconOutline: <IoGridOutline />, name: "Dashboard", path: "/app" },
   { iconFilled: <PiCashRegisterFill/>, iconOutline: <PiCashRegisterLight />, name: "Stock", path: "/app/stock" },
-  { iconFilled: <BsBasket2Fill />, iconOutline: <BsBasket2 />, name: "Stock Management", path: "/app/stock_management" },
+  { iconFilled: <BsBasket2Fill />, iconOutline: <BsBasket2 />, name: "Stock Management", path: "/app/stock-management" },
   { iconFilled: <IoAlbums />, iconOutline: <IoAlbumsOutline />, name: "Categories", path: "/app/categories" },
   { iconFilled: <IoDocumentText />, iconOutline: <IoDocumentTextOutline />, name: "Suppliers", path: "/app/suppliers" },
-  { iconFilled: <IoPieChart />, iconOutline: <IoPieChartOutline />, name: "Reports", path: "/app/report" },
+  { iconFilled: <IoPieChart />, iconOutline: <IoPieChartOutline />, name: "Reports", path: "/app/reports" },
   {
     iconFilled: <IoSettings />,
     iconOutline: <IoSettingsOutline />,
