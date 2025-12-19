@@ -46,17 +46,18 @@ interface StockAlertPayload {
 
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [clearedIds, setClearedIds] = useState<Set<string>>(new Set());
+  const [clearedIds, setClearedIds] = useState<Set<number>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const alertKeysRef = useRef<Set<string>>(new Set());
 
+  // Load notifications and cleared IDs from localStorage on mount
   useEffect(() => {
-    let savedCleared: string[] = [];
+    let savedClearedIds: number[] = [];
     try {
       const savedClearedRaw = localStorage.getItem('cleared-notification-ids');
       if (savedClearedRaw) {
-        savedCleared = JSON.parse(savedClearedRaw);
-        setClearedIds(new Set(savedCleared));
+        savedClearedIds = JSON.parse(savedClearedRaw);
+        setClearedIds(new Set(savedClearedIds));
       }
     } catch (error) {
       console.error('Error loading cleared notifications:', error);
@@ -70,7 +71,8 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           ...n,
           timestamp: new Date(n.timestamp)
         }));
-        const filteredNotifications = notificationsWithDates.filter(n => !savedCleared.includes(n.action));
+        // Filter out notifications that have been cleared
+        const filteredNotifications = notificationsWithDates.filter(n => !savedClearedIds.includes(n.id));
         setNotifications(filteredNotifications);
         alertKeysRef.current = new Set(filteredNotifications.map(n => n.action).filter(Boolean));
       } catch (error) {
@@ -80,14 +82,20 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     setIsLoading(false);
   }, []);
 
+  // Save notifications to localStorage whenever they change
   useEffect(() => {
-    localStorage.setItem('stock-notifications', JSON.stringify(notifications));
-    alertKeysRef.current = new Set(notifications.map(n => n.action).filter(Boolean));
-  }, [notifications]);
+    if (!isLoading) {
+      localStorage.setItem('stock-notifications', JSON.stringify(notifications));
+      alertKeysRef.current = new Set(notifications.map(n => n.action).filter(Boolean));
+    }
+  }, [notifications, isLoading]);
 
+  // Save cleared IDs to localStorage whenever they change
   useEffect(() => {
-    localStorage.setItem('cleared-notification-ids', JSON.stringify(Array.from(clearedIds)));
-  }, [clearedIds]);
+    if (!isLoading) {
+      localStorage.setItem('cleared-notification-ids', JSON.stringify(Array.from(clearedIds)));
+    }
+  }, [clearedIds, isLoading]);
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
@@ -96,37 +104,39 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   }, []);
 
   const markAsRead = (id: number) => {
-    setNotifications(prev => 
+    setNotifications(prev =>
       prev.map(n => n.id === id ? { ...n, read: true } : n)
     );
   };
 
   const markAllAsRead = () => {
-    setNotifications(prev => 
+    setNotifications(prev =>
       prev.map(n => ({ ...n, read: true }))
     );
   };
 
   const clearNotification = (id: number) => {
-    const notification = notifications.find(n => n.id === id);
-    if (notification?.action) {
-      setClearedIds(prev => new Set(prev).add(notification.action));
-    }
+    // Add the notification ID to cleared list to prevent it from reappearing
+    setClearedIds(prev => new Set(prev).add(id));
+    // Remove from current notifications
     setNotifications(prev => prev.filter(n => n.id !== id));
   };
 
   const clearAllNotifications = () => {
-    const keysToClear = notifications.map(n => n.action).filter(Boolean);
-    setClearedIds(prev => new Set([...prev, ...keysToClear]));
+    // Add all current notification IDs to cleared list
+    const idsToClear = notifications.map(n => n.id);
+    setClearedIds(prev => new Set([...prev, ...idsToClear]));
+    // Clear all notifications
     setNotifications([]);
   };
 
   const pushAlertNotification = useCallback((key: string, notification: Notification) => {
-    if (alertKeysRef.current.has(key) || clearedIds.has(key)) {
+    // Check if this alert key has already been added or if the notification ID has been cleared
+    if (alertKeysRef.current.has(key)) {
       return;
     }
     addNotification(notification);
-  }, [addNotification, clearedIds]);
+  }, [addNotification]);
 
   const syncAlerts = useCallback(async () => {
     try {
@@ -142,7 +152,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
           const message = type === 'LOW_SHADE' ? `${alert.product} (${alert.stockCode}) shade ${alert.shadeName} is low (${alert.quantity} units)`
             : type === 'HIGH_SHADE' ? `${alert.product} shade ${alert.shadeName} is overstocked (${alert.quantity} units)`
-            : `${alert.product} is low (${alert.quantity} units remaining)`;
+              : `${alert.product} is low (${alert.quantity} units remaining)`;
 
           pushAlertNotification(key, {
             id: now + (alert.shadeId || alert.stockId),

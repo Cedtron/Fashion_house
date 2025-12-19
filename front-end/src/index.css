@@ -596,3 +596,13 @@ span.flatpickr-weekday,
 .simplebar-scrollbar.simplebar-visible:before {
   @apply opacity-100;
 }
+
+@keyframes progress-bar {
+  0% { transform: translateX(-100%); width: 30%; }
+  50% { transform: translateX(50%); width: 50%; }
+  100% { transform: translateX(150%); width: 30%; }
+}
+
+.animate-progress-bar {
+  animation: progress-bar 2s infinite linear;
+}

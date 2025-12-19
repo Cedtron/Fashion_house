@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { toast, ToastContainer } from "react-toastify";
-import { FiSearch, FiEdit, FiTrash2, FiPlus, FiX, FiEye, FiCopy, FiDroplet } from "react-icons/fi";
+import { FiSearch, FiEdit, FiTrash2, FiPlus, FiX, FiEye, FiCopy, FiDroplet, FiCamera, FiImage } from "react-icons/fi";
 import PageBreadcrumb from "../components/common/PageBreadCrumb";
 import PageMeta from "../components/common/PageMeta";
 import api from '../utils/axios';
@@ -162,6 +162,13 @@ export default function StockPage() {
   const [pickedColor, setPickedColor] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
+  
+  // Image search states
+  const [searchImageModalOpen, setSearchImageModalOpen] = useState(false);
+  const [searchImageFile, setSearchImageFile] = useState<File | null>(null);
+  const [searchImagePreview, setSearchImagePreview] = useState<string | null>(null);
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
 
   const { register, control, handleSubmit, reset, setValue, watch } = useForm<StockFormData>({
     defaultValues: {
@@ -511,6 +518,67 @@ export default function StockPage() {
     }
   };
 
+  // Handle search by image
+  const handleSearchByImage = async () => {
+    if (!searchImageFile) {
+      toast.error("Please upload an image to search");
+      return;
+    }
+
+    setIsSearching(true);
+    try {
+      const formData = new FormData();
+      formData.append('image', searchImageFile);
+
+      const response = await api.post('/stock/search-by-photo', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      setSearchResults(response.data);
+      
+      if (response.data.length === 0) {
+        toast.info("No similar products found");
+      } else {
+        const method = response.data[0]?.searchMethod;
+        const methodText = method === 'ai' ? 'AI-powered search' : 'hash-based search';
+        toast.success(`Found ${response.data.length} similar products using ${methodText}!`);
+      }
+    } catch (error: any) {
+      console.error('Error searching by image:', error);
+      toast.error(error.response?.data?.message || "Failed to search by image");
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  // Handle search image upload
+  const handleSearchImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error("Image size should be less than 5MB");
+        return;
+      }
+
+      setSearchImageFile(file);
+      const reader = new FileReader();
+      reader.onload = () => {
+        setSearchImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Close search modal
+  const closeSearchModal = () => {
+    setSearchImageModalOpen(false);
+    setSearchImageFile(null);
+    setSearchImagePreview(null);
+    setSearchResults([]);
+  };
+
 
 
   // Close modal function
@@ -596,10 +664,18 @@ export default function StockPage() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => fetchStocks()}
-              className="px-3 py-2 text-sm bg-gray-100 rounded-md hover:bg-gray-200"
-              title="Clear image filter"
+              className="px-3 py-2 text-sm bg-gray-100 rounded-md hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600"
+              title="Clear filters"
             >
               Clear
+            </button>
+
+            <button
+              onClick={() => setSearchImageModalOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 text-white transition-all rounded-lg bg-blue-600 hover:bg-blue-700"
+              title="Search by Image"
+            >
+              <FiCamera /> Search by Image
             </button>
 
             <button
@@ -1242,6 +1318,174 @@ export default function StockPage() {
                   >
                     Close
                   </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Search by Image Modal */}
+        {searchImageModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/50">
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-5xl shadow-lg relative overflow-auto max-h-[90vh]">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold dark:text-white">
+                  <FiImage className="inline mr-2" />
+                  Search by Image
+                </h2>
+                <button
+                  onClick={closeSearchModal}
+                  className="p-1 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                >
+                  <FiX size={24} />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                {/* Upload Section */}
+                <div className="space-y-4">
+                  <div className="p-4 border-2 border-dashed rounded-lg dark:border-gray-600">
+                    <label className="block mb-2 text-sm font-medium dark:text-white">
+                      Upload Image to Search
+                    </label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleSearchImageChange}
+                      className="w-full px-3 py-2 text-sm border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    />
+                    {searchImagePreview && (
+                      <div className="mt-3">
+                        <img
+                          src={searchImagePreview}
+                          alt="Search preview"
+                          className="object-contain w-full rounded-lg max-h-64"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    onClick={handleSearchByImage}
+                    disabled={!searchImageFile || isSearching}
+                    className="w-full px-4 py-3 text-white transition-all rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {isSearching ? (
+                      <>
+                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        Searching...
+                      </>
+                    ) : (
+                      <>
+                        <FiSearch /> Search Similar Products
+                      </>
+                    )}
+                  </button>
+
+                  {isSearching && (
+                    <div className="w-full h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden mt-2">
+                      <div className="h-full bg-blue-600 animate-progress-bar"></div>
+                    </div>
+                  )}
+
+                  <div className="p-3 text-sm rounded-lg bg-blue-50 dark:bg-blue-900/20">
+                    <p className="font-medium text-blue-900 dark:text-blue-300">How it works:</p>
+                    <ul className="mt-2 space-y-1 text-blue-800 dark:text-blue-400">
+                      <li>• Fast hash-based search for exact/similar images</li>
+                      <li>• AI-powered fallback for different angles/lighting</li>
+                      <li>• Results show similarity percentage and method used</li>
+                    </ul>
+                  </div>
+                </div>
+
+                {/* Results Section */}
+                <div className="space-y-4">
+                  <h3 className="text-lg font-medium dark:text-white">
+                    Search Results {searchResults.length > 0 && `(${searchResults.length})`}
+                  </h3>
+                  
+                  {searchResults.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center p-8 text-center border-2 border-dashed rounded-lg dark:border-gray-600">
+                      <FiImage size={48} className="mb-3 text-gray-400" />
+                      <p className="text-gray-500 dark:text-gray-400">
+                        {isSearching ? 'Searching...' : 'Upload an image and click search to find similar products'}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3 overflow-y-auto max-h-96">
+                      {searchResults.map((result) => (
+                        <div
+                          key={result.id}
+                          className="p-4 border rounded-lg dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                        >
+                          <div className="flex gap-3">
+                            {result.imagePath && (
+                              <img
+                                src={result.imagePath.startsWith('http') ? result.imagePath : `${api.defaults.baseURL}${result.imagePath}`}
+                                alt={result.product}
+                                className="object-cover w-20 h-20 rounded"
+                              />
+                            )}
+                            <div className="flex-1">
+                              <div className="flex items-start justify-between">
+                                <div>
+                                  <h4 className="font-semibold dark:text-white">{result.product}</h4>
+                                  <p className="text-sm text-gray-600 dark:text-gray-400">{result.stockId}</p>
+                                </div>
+                                <div className="text-right">
+                                  <div className={`text-lg font-bold ${result.similarity >= 80 ? 'text-green-600' : result.similarity >= 60 ? 'text-yellow-600' : 'text-orange-600'}`}>
+                                    {result.similarity}%
+                                  </div>
+                                  <div className="text-xs px-2 py-1 rounded mt-1 inline-block" style={{
+                                    backgroundColor: result.searchMethod === 'ai' ? '#3b82f6' : '#10b981',
+                                    color: 'white'
+                                  }}>
+                                    {result.searchMethod === 'ai' ? '🤖 AI' : '# Hash'}
+                                  </div>
+                                </div>
+                              </div>
+                              
+                              <div className="mt-2 text-sm">
+                                <span className="text-gray-600 dark:text-gray-400">Category:</span>{' '}
+                                <span className="dark:text-white">{result.category}</span>
+                                {' | '}
+                                <span className="text-gray-600 dark:text-gray-400">Qty:</span>{' '}
+                                <span className="dark:text-white">{result.quantity}</span>
+                              </div>
+
+                              {result.aiExplanation && (
+                                <div className="mt-2 p-2 text-xs bg-blue-50 dark:bg-blue-900/20 rounded">
+                                  <p className="font-medium text-blue-900 dark:text-blue-300">AI Analysis:</p>
+                                  <p className="text-blue-800 dark:text-blue-400 mt-1">{result.aiExplanation}</p>
+                                </div>
+                              )}
+
+                              <div className="flex gap-2 mt-3">
+                                <button
+                                  onClick={() => {
+                                    closeSearchModal();
+                                    openViewModal(result);
+                                  }}
+                                  className="px-3 py-1 text-sm text-blue-600 border border-blue-600 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                                >
+                                  View Details
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    closeSearchModal();
+                                    openModal(result);
+                                  }}
+                                  className="px-3 py-1 text-sm text-coffee-600 border border-coffee-600 rounded hover:bg-coffee-50 dark:hover:bg-coffee-900/20"
+                                >
+                                  Edit
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

@@ -72,7 +72,7 @@ export default function StockReduction() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
-  const [editingShades, setEditingShades] = useState<Map<number, {shade: Shade, reduction: number}>>(new Map());
+  const [editingShades, setEditingShades] = useState<Map<number, { shade: Shade, reduction: number }>>(new Map());
   const [imageSearchLoading, setImageSearchLoading] = useState(false);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageResults, setImageResults] = useState<Stock[]>([]);
@@ -116,7 +116,7 @@ export default function StockReduction() {
   // Filter stocks
   useEffect(() => {
     let filtered = imageFilterActive && imageResults.length > 0 ? imageResults : stocks;
-    
+
     if (searchTerm) {
       filtered = filtered.filter(stock =>
         stock.product.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -124,7 +124,7 @@ export default function StockReduction() {
         stock.category.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
-    
+
     if (categoryFilter) {
       filtered = filtered.filter(stock =>
         stock.category.toLowerCase() === categoryFilter.toLowerCase()
@@ -137,8 +137,8 @@ export default function StockReduction() {
   // Camera functions
   const startCamera = async () => {
     try {
-      const mediaStream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'environment' } 
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' }
       });
       setStream(mediaStream);
       if (videoRef.current) {
@@ -226,16 +226,16 @@ export default function StockReduction() {
 
   // Check if product is fabric
   const isFabricProduct = (stock: Stock) => {
-    return stock.category.toLowerCase().includes('fabric') || 
-           stock.category.toLowerCase().includes('cloth') ||
-           (stock.shades && stock.shades.length > 0);
+    return stock.category.toLowerCase().includes('fabric') ||
+      stock.category.toLowerCase().includes('cloth') ||
+      (stock.shades && stock.shades.length > 0);
   };
 
   // Handle stock selection for reduction
   const handleStockSelect = (stock: Stock) => {
     setSelectedStock(stock);
     setReductionQuantity(1);
-    
+
     const shadesMap = new Map();
     if (stock.shades) {
       stock.shades.forEach(shade => {
@@ -386,7 +386,7 @@ export default function StockReduction() {
 
       setReductionItems([]);
       await fetchStocks();
-      
+
       toast.success('Stock reductions processed successfully!');
     } catch (error) {
       console.error('Error processing reductions:', error);
@@ -419,7 +419,7 @@ export default function StockReduction() {
         pauseOnHover
         theme="light"
       />
-      
+
       <div className="px-4 py-6 mx-auto max-w-7xl sm:px-6 lg:px-8">
         {/* Header */}
         <div className="mb-6">
@@ -451,6 +451,12 @@ export default function StockReduction() {
                   </button>
                 </div>
               </div>
+
+              {imageSearchLoading && (
+                <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden mb-4">
+                  <div className="h-full bg-blue-600 animate-progress-bar"></div>
+                </div>
+              )}
 
               {(imagePreview || showCamera) && (
                 <div className="grid gap-3 mt-3 md:grid-cols-2">
@@ -553,7 +559,7 @@ export default function StockReduction() {
                   {reductionItems.length} items in reduction list
                 </div>
               </div>
-              
+
               {filteredStocks.length === 0 ? (
                 <div className="p-8 text-center">
                   <FiPackage className="w-10 h-10 mx-auto text-gray-400" />
@@ -564,34 +570,32 @@ export default function StockReduction() {
                   {filteredStocks.map((stock) => (
                     <div
                       key={stock.id}
-                      className={`p-3 border rounded cursor-pointer transition-all hover:shadow ${
-                        selectedStock?.id === stock.id
+                      className={`p-3 border rounded cursor-pointer transition-all hover:shadow ${selectedStock?.id === stock.id
                           ? 'border-blue-500 bg-blue-50'
                           : 'border-gray-200 hover:border-gray-300'
-                      }`}
+                        }`}
                       onClick={() => handleStockSelect(stock)}
                     >
                       <div className="flex items-start justify-between">
                         <div className="flex items-start gap-3">
-                      {stock.imagePath && (
-  <img
-    className="object-cover w-12 h-12 rounded"
- 
-    src={stock.imagePath.startsWith('http') ? stock.imagePath : `${api.defaults.baseURL}${stock.imagePath}`} 
-    alt={stock.product}
-  />
-)}
+                          {stock.imagePath && (
+                            <img
+                              className="object-cover w-12 h-12 rounded"
+
+                              src={stock.imagePath.startsWith('http') ? stock.imagePath : `${api.defaults.baseURL}${stock.imagePath}`}
+                              alt={stock.product}
+                            />
+                          )}
                           <div className="flex-1">
                             <h3 className="font-medium text-gray-900">{stock.product}</h3>
                             <p className="text-xs text-gray-500">{stock.stockId} • {stock.category}</p>
                             <div className="flex items-center gap-2 mt-1">
-                              <span className={`px-1.5 py-0.5 text-xs rounded ${
-                                stock.quantity < 10 
-                                  ? 'bg-red-100 text-red-800' 
-                                  : stock.quantity < 50 
+                              <span className={`px-1.5 py-0.5 text-xs rounded ${stock.quantity < 10
+                                  ? 'bg-red-100 text-red-800'
+                                  : stock.quantity < 50
                                     ? 'bg-yellow-100 text-yellow-800'
                                     : 'bg-green-100 text-green-800'
-                              }`}>
+                                }`}>
                                 {stock.quantity} units
                               </span>
                               <span className="text-xs font-medium">${stock.price}</span>
@@ -715,7 +719,7 @@ export default function StockReduction() {
                   <button
                     onClick={addReductionItem}
                     disabled={
-                      isFabricProduct(selectedStock) 
+                      isFabricProduct(selectedStock)
                         ? !hasShadeReductions()
                         : reductionQuantity > selectedStock.quantity || reductionQuantity <= 0
                     }

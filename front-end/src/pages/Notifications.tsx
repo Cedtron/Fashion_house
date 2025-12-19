@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { FiBell, FiCheck, FiTrash2, FiSearch, FiArrowLeft, FiPackage, FiEdit, FiPlus, FiMinus, FiImage, FiEye } from "react-icons/fi";
 import { Link, useNavigate } from "react-router-dom";
+import { useNotifications } from "../context/NotificationContext";
 
 interface Notification {
   id: number;
@@ -24,45 +25,23 @@ interface Notification {
 }
 
 export default function NotificationsPage() {
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const { notifications, markAsRead, markAllAsRead, clearNotification, clearAllNotifications } = useNotifications();
   const [searchTerm, setSearchTerm] = useState("");
   const [filterAction, setFilterAction] = useState("ALL");
   const [filterCategory, setFilterCategory] = useState("ALL");
   const navigate = useNavigate();
 
-  // Load notifications from localStorage on mount
-  useEffect(() => {
-    const savedNotifications = localStorage.getItem('stock-notifications');
-    if (savedNotifications) {
-      try {
-        const parsed = JSON.parse(savedNotifications);
-        const notificationsWithDates = parsed.map((n: any) => ({
-          ...n,
-          timestamp: new Date(n.timestamp)
-        }));
-        setNotifications(notificationsWithDates);
-      } catch (error) {
-        console.error('Error loading notifications:', error);
-      }
-    }
-  }, []);
-
-  // Save to localStorage whenever notifications change
-  useEffect(() => {
-    localStorage.setItem('stock-notifications', JSON.stringify(notifications));
-  }, [notifications]);
-
   // Filter notifications
   const filteredNotifications = notifications.filter(notification => {
-    const matchesSearch = searchTerm === '' || 
+    const matchesSearch = searchTerm === '' ||
       notification.userName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       notification.project.toLowerCase().includes(searchTerm.toLowerCase()) ||
       notification.message.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (notification.stockItem?.stockId.toLowerCase().includes(searchTerm.toLowerCase()));
-    
+
     const matchesAction = filterAction === "ALL" || notification.action === filterAction;
     const matchesCategory = filterCategory === "ALL" || notification.category === filterCategory;
-    
+
     return matchesSearch && matchesAction && matchesCategory;
   });
 
@@ -72,34 +51,7 @@ export default function NotificationsPage() {
 
   // Handle view stock history
   const handleViewStockHistory = (stockId: number) => {
-  navigate(`app/stock/${stockId}/history`);
-
-  };
-
-  // Clear single notification
-  const clearNotification = (id: number) => {
-    setNotifications(prev => prev.filter(notification => notification.id !== id));
-  };
-
-  // Clear all notifications
-  const clearAllNotifications = () => {
-    setNotifications([]);
-  };
-
-  // Mark as read
-  const markAsRead = (id: number) => {
-    setNotifications(prev => 
-      prev.map(notification => 
-        notification.id === id ? { ...notification, read: true } : notification
-      )
-    );
-  };
-
-  // Mark all as read
-  const markAllAsRead = () => {
-    setNotifications(prev => 
-      prev.map(notification => ({ ...notification, read: true }))
-    );
+    navigate(`/app/stock/${stockId}/history`);
   };
 
   // Get action icon
@@ -128,7 +80,7 @@ export default function NotificationsPage() {
   // Group by date
   const groupByDate = () => {
     const groups: { [key: string]: Notification[] } = {};
-    
+
     filteredNotifications.forEach(notification => {
       const date = new Date(notification.timestamp).toLocaleDateString();
       if (!groups[date]) {
@@ -136,7 +88,7 @@ export default function NotificationsPage() {
       }
       groups[date].push(notification);
     });
-    
+
     return groups;
   };
 
@@ -159,7 +111,7 @@ export default function NotificationsPage() {
             Stock Activity Notifications
           </h1>
         </div>
-        
+
         {/* Stats */}
         <div className="grid grid-cols-1 gap-4 mb-6 md:grid-cols-4">
           <div className="p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
@@ -171,7 +123,7 @@ export default function NotificationsPage() {
               <FiBell className="w-8 h-8 text-blue-500" />
             </div>
           </div>
-          
+
           <div className="p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
             <div className="flex items-center justify-between">
               <div>
@@ -181,7 +133,7 @@ export default function NotificationsPage() {
               <FiPackage className="w-8 h-8 text-orange-500" />
             </div>
           </div>
-          
+
           <div className="p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
             <div className="flex items-center justify-between">
               <div>
@@ -193,7 +145,7 @@ export default function NotificationsPage() {
               <FiPlus className="w-8 h-8 text-green-500" />
             </div>
           </div>
-          
+
           <div className="p-4 bg-white border border-gray-200 rounded-lg shadow-sm">
             <div className="flex items-center justify-between">
               <div>
@@ -222,7 +174,7 @@ export default function NotificationsPage() {
                 />
               </div>
             </div>
-            
+
             <div className="flex flex-col gap-2 sm:flex-row">
               <select
                 className="px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -289,9 +241,8 @@ export default function NotificationsPage() {
                   return (
                     <div
                       key={notification.id}
-                      className={`flex items-start gap-4 p-6 hover:bg-gray-50 ${
-                        !notification.read ? 'bg-blue-50' : ''
-                      }`}
+                      className={`flex items-start gap-4 p-6 hover:bg-gray-50 ${!notification.read ? 'bg-blue-50' : ''
+                        }`}
                     >
                       {/* User avatar */}
                       <div className={`flex items-center justify-center w-12 h-12 rounded-full text-white ${notification.userColor}`}>

@@ -1,9 +1,9 @@
 
 import { Module } from '@nestjs/common';
-import { VertexAiService } from './vertex-ai.service';
+import { GoogleAiService } from './vertex-ai.service';
 
 @Module({
-  providers: [VertexAiService],
-  exports: [VertexAiService],
+  providers: [GoogleAiService],
+  exports: [GoogleAiService],
 })
-export class VertexAiModule {}
+export class GoogleAiModule {}

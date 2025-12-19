@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, Not, IsNull } from 'typeorm';
 import { Stock } from '../entities/stock.entity';
 import { Shade } from '../entities/shade.entity';
 import { CreateStockDto } from './dto/create-stock.dto';
@@ -9,6 +9,7 @@ import { AdjustStockDto } from './dto/adjust-stock.dto';
 import { SearchStockDto } from './dto/search-stock.dto';
 import { StockTrackingService } from './stock-tracking.service';
 import { StockAction, StockTracking } from '../entities/stock-tracking.entity';
+import { GoogleAiService } from '../vertex-ai/vertex-ai.service';
 import { existsSync, unlinkSync } from 'fs';
 
 // =============== FIXED JIMP IMPORT ===============
@@ -30,6 +31,7 @@ export class StockService {
     @InjectRepository(Shade)
     private readonly shadeRepository: Repository<Shade>,
     private readonly trackingService: StockTrackingService,
+    private readonly googleAiService: GoogleAiService,
   ) { }
 
   private async generateStockId(): Promise<string> {
@@ -225,27 +227,27 @@ export class StockService {
   async completeUpdate(id: number, updatePayload: any, username: string): Promise<Stock> {
     try {
       console.log('Complete update for stock', id, 'payload:', updatePayload);
-      
+
       // Get current stock with shades
       const stock = await this.findOne(id);
       const oldData = this.prepareCompleteStockData(stock);
-      
+
       // Track changes for logging
       const changes: string[] = [];
-      
+
       // 1. Update main stock fields if provided
       const stockFields = ['product', 'category', 'quantity', 'cost', 'price', 'imagePath'];
       let hasStockChanges = false;
-      
+
       stockFields.forEach(field => {
         if (updatePayload[field] !== undefined && updatePayload[field] !== null) {
           const oldValue = stock[field];
           const newValue = updatePayload[field];
-          
+
           if (oldValue !== newValue) {
             stock[field] = newValue;
             hasStockChanges = true;
-            
+
             if (field === 'quantity') {
               const diff = Number(newValue) - Number(oldValue);
               if (diff !== 0) {
@@ -257,18 +259,18 @@ export class StockService {
           }
         }
       });
-      
+
       // Save stock changes if any
       if (hasStockChanges) {
         await this.stockRepository.save(stock);
       }
-      
+
       // 2. Handle shades if provided (this is where frontend reductions come in)
       let shadeUpdates = { created: 0, updated: 0, deleted: 0, details: [] as string[] };
-      
+
       if (updatePayload.shades && Array.isArray(updatePayload.shades)) {
         shadeUpdates = await this.handleShadeUpdates(id, updatePayload.shades);
-        
+
         if (shadeUpdates.updated > 0 || shadeUpdates.created > 0 || shadeUpdates.deleted > 0) {
           changes.push(`Shades: ${shadeUpdates.created} created, ${shadeUpdates.updated} updated, ${shadeUpdates.deleted} deleted`);
           if (shadeUpdates.details.length > 0) {
@@ -276,20 +278,20 @@ export class StockService {
           }
         }
       }
-      
+
       // 3. Get updated stock with relations
       const completeStock = await this.stockRepository.findOne({
         where: { id },
         relations: ['shades'],
       });
-      
+
       const newData = this.prepareCompleteStockData(completeStock);
-      
+
       // 4. Log the action
-      const description = changes.length > 0 
+      const description = changes.length > 0
         ? `Updated ${completeStock.product} (${completeStock.stockId}): ${changes.join(' | ')}`
         : `Updated ${completeStock.product} (no changes detected)`;
-      
+
       await this.trackingService.logAction(
         completeStock,
         StockAction.UPDATE,
@@ -298,7 +300,7 @@ export class StockService {
         oldData,
         newData,
       );
-      
+
       console.log('Complete update successful:', description);
       return completeStock;
     } catch (error) {
@@ -317,26 +319,26 @@ export class StockService {
     details: string[];
   }> {
     const result = { created: 0, updated: 0, deleted: 0, details: [] as string[] };
-    
+
     // Get existing shades
-    const existingShades = await this.shadeRepository.find({ 
-      where: { stockId } 
+    const existingShades = await this.shadeRepository.find({
+      where: { stockId }
     });
-    
+
     const existingMap = new Map<number, Shade>();
     existingShades.forEach(shade => existingMap.set(shade.id, shade));
-    
+
     const processedIds = new Set<number>();
-    
+
     // Process shades from payload
     for (const shadeData of shadesArray) {
       if (shadeData.id && existingMap.has(shadeData.id)) {
         // Update existing shade
         const existing = existingMap.get(shadeData.id)!;
-        
+
         // Track changes
         const changes: string[] = [];
-        
+
         // Check quantity change
         const oldQuantity = existing.quantity;
         const newQuantity = Number(shadeData.quantity) || 0;
@@ -344,45 +346,45 @@ export class StockService {
           const diff = newQuantity - oldQuantity;
           changes.push(`quantity: ${oldQuantity} → ${newQuantity} (${diff > 0 ? '+' : ''}${diff})`);
         }
-        
+
         // Update other fields
         const updatedFields: any = {};
-        
+
         if (shadeData.colorName !== undefined && shadeData.colorName !== existing.colorName) {
           updatedFields.colorName = shadeData.colorName;
           changes.push(`colorName: ${existing.colorName} → ${shadeData.colorName}`);
         }
-        
+
         if (shadeData.color !== undefined && shadeData.color !== existing.color) {
           updatedFields.color = shadeData.color;
           changes.push(`color: ${existing.color} → ${shadeData.color}`);
         }
-        
+
         if (shadeData.unit !== undefined && shadeData.unit !== existing.unit) {
           updatedFields.unit = shadeData.unit;
         }
-        
+
         if (shadeData.length !== undefined && Number(shadeData.length) !== existing.length) {
           updatedFields.length = Number(shadeData.length) || 0;
         }
-        
+
         if (shadeData.lengthUnit !== undefined && shadeData.lengthUnit !== existing.lengthUnit) {
           updatedFields.lengthUnit = shadeData.lengthUnit;
         }
-        
+
         updatedFields.quantity = newQuantity;
-        
+
         // Save if there are changes
         if (changes.length > 0 || Object.keys(updatedFields).length > 0) {
           await this.shadeRepository.save({
             ...existing,
             ...updatedFields
           });
-          
+
           result.updated++;
           result.details.push(`${existing.colorName}: ${changes.join(', ')}`);
         }
-        
+
         processedIds.add(shadeData.id);
       } else if (!shadeData.id) {
         // Create new shade
@@ -395,13 +397,13 @@ export class StockService {
           lengthUnit: shadeData.lengthUnit || 'meters',
           stockId: stockId,
         });
-        
+
         const saved = await this.shadeRepository.save(newShade);
         result.created++;
         result.details.push(`New shade: ${saved.colorName} (${saved.quantity})`);
       }
     }
-    
+
     // Delete shades not in payload
     for (const [id, shade] of existingMap.entries()) {
       if (!processedIds.has(id)) {
@@ -410,7 +412,7 @@ export class StockService {
         result.details.push(`Deleted shade: ${shade.colorName}`);
       }
     }
-    
+
     return result;
   }
 
@@ -418,55 +420,55 @@ export class StockService {
   async simpleUpdate(id: number, updateData: any, username: string): Promise<Stock> {
     try {
       console.log('Simple update for stock', id, 'data:', updateData);
-      
+
       // Get stock
       const stock = await this.findOne(id);
       const oldData = this.prepareCompleteStockData(stock);
-      
+
       // Only update fields that frontend sends
       const fields = ['product', 'category', 'quantity', 'cost', 'price', 'imagePath'];
       const updatePayload: any = {};
-      
+
       fields.forEach(field => {
         if (updateData[field] !== undefined && updateData[field] !== null) {
           updatePayload[field] = updateData[field];
         }
       });
-      
+
       // Update stock
       Object.assign(stock, updatePayload);
       const savedStock = await this.stockRepository.save(stock);
-      
+
       // Handle shades if provided
       let shadeChanges = [];
       if (updateData.shades && Array.isArray(updateData.shades)) {
         shadeChanges = await this.simpleUpdateShades(id, updateData.shades);
       }
-      
+
       // Get updated stock
       const completeStock = await this.stockRepository.findOne({
         where: { id: savedStock.id },
         relations: ['shades'],
       });
-      
+
       const newData = this.prepareCompleteStockData(completeStock);
-      
+
       // Track with shade details
       let shadeDetails = '';
       if (shadeChanges.length > 0) {
         const created = shadeChanges.filter(c => c.action === 'created').length;
         const updated = shadeChanges.filter(c => c.action === 'updated');
         const deleted = shadeChanges.filter(c => c.action === 'deleted').length;
-        
+
         shadeDetails = ` | Shades: ${created} new, ${updated.length} updated, ${deleted} removed`;
-        
+
         // Add shade colors for updated ones
         if (updated.length > 0) {
           const shadeColors = updated.map(u => u.colorName).join(', ');
           shadeDetails += ` (Updated colors: ${shadeColors})`;
         }
       }
-      
+
       await this.trackingService.logAction(
         completeStock,
         StockAction.UPDATE,
@@ -475,7 +477,7 @@ export class StockService {
         oldData,
         newData,
       );
-      
+
       return completeStock;
     } catch (error) {
       console.error('Simple update error:', error);
@@ -486,24 +488,24 @@ export class StockService {
   // ADD THIS SHADE UPDATE HELPER:
   private async simpleUpdateShades(stockId: number, shadesArray: any[]): Promise<any[]> {
     const changes = [];
-    
+
     // Get existing shades
     const existingShades = await this.shadeRepository.find({ where: { stockId } });
     const existingMap = new Map<number, Shade>();
     existingShades.forEach(shade => existingMap.set(shade.id, shade));
-    
+
     const processedIds = new Set<number>();
-    
+
     // Process shades
     for (const shadeData of shadesArray) {
       if (shadeData.id && existingMap.has(shadeData.id)) {
         // Update existing
         const existing = existingMap.get(shadeData.id)!;
-        
+
         // Check if changed
         const oldQuantity = existing.quantity;
         const newQuantity = Number(shadeData.quantity) || 0;
-        
+
         const updatedShade = await this.shadeRepository.save({
           ...existing,
           colorName: shadeData.colorName || existing.colorName,
@@ -513,7 +515,7 @@ export class StockService {
           length: Number(shadeData.length) || existing.length,
           lengthUnit: shadeData.lengthUnit || existing.lengthUnit,
         });
-        
+
         changes.push({
           action: 'updated',
           colorName: updatedShade.colorName,
@@ -522,7 +524,7 @@ export class StockService {
           oldQuantity,
           newQuantity
         });
-        
+
         processedIds.add(shadeData.id);
       } else {
         // Create new
@@ -535,7 +537,7 @@ export class StockService {
           lengthUnit: shadeData.lengthUnit || 'meters',
           stockId: stockId,
         });
-        
+
         const saved = await this.shadeRepository.save(newShade);
         changes.push({
           action: 'created',
@@ -545,7 +547,7 @@ export class StockService {
         });
       }
     }
-    
+
     // Delete shades not in array
     for (const [id, shade] of existingMap.entries()) {
       if (!processedIds.has(id)) {
@@ -558,7 +560,7 @@ export class StockService {
         });
       }
     }
-    
+
     return changes;
   }
 
@@ -603,15 +605,15 @@ export class StockService {
         const savedShade = await this.shadeRepository.save(newShade);
 
         changes.push({
-            action: 'created',
-            colorName: savedShade.colorName,
-            shadeId: savedShade.id,
-          });
-        }
+          action: 'created',
+          colorName: savedShade.colorName,
+          shadeId: savedShade.id,
+        });
       }
-
-      return changes;
     }
+
+    return changes;
+  }
 
   // =============== FIXED IMAGE HASH METHOD ===============
   private async getImageHash(pathOrBuffer: string | any): Promise<string> {
@@ -635,17 +637,17 @@ export class StockService {
       } else {
         throw new Error('Invalid input: must be a file path (string) or Buffer');
       }
-      
+
       // Resize to 8x8 pixels for hash calculation (standard for perceptual hash)
       image.resize(8, 8, Jimp.RESIZE_BILINEAR);
-      
+
       // Convert to grayscale to focus on structure, not color
       image.greyscale();
-      
+
       // Get image data
       const width = image.bitmap.width;
       const height = image.bitmap.height;
-      
+
       // Calculate average pixel value
       let total = 0;
       for (let y = 0; y < height; y++) {
@@ -654,9 +656,9 @@ export class StockService {
           total += pixel.r; // Using red channel since image is grayscale
         }
       }
-      
+
       const average = total / (width * height);
-      
+
       // Generate hash string: 1 for pixels above average, 0 for below
       let hash = '';
       for (let y = 0; y < height; y++) {
@@ -665,7 +667,7 @@ export class StockService {
           hash += pixel.r > average ? '1' : '0';
         }
       }
-      
+
       return hash;
     } catch (error) {
       console.error('Error generating image hash with Jimp:', error);
@@ -678,7 +680,7 @@ export class StockService {
     if (!a || !b || a.length !== b.length) {
       return Number.MAX_SAFE_INTEGER; // Very large distance for invalid comparison
     }
-    
+
     let dist = 0;
     for (let i = 0; i < a.length; i++) {
       if (a[i] !== b[i]) dist++;
@@ -686,60 +688,139 @@ export class StockService {
     return dist;
   }
 
- // ---------------- Image-based stock search using stored hashes (60% MATCH) ----------------
-async searchByPhoto(imagePath: string): Promise<any[]> {
-  try {
-    // 1️⃣ Hash uploaded image (from disk)
-    const queryHash = await this.getImageHash(imagePath);
+  // ---------------- Image-based stock search using stored hashes (60% MATCH) ----------------
+  async searchByPhoto(imagePath: string): Promise<any[]> {
+    try {
+      console.log('[SEARCH-BY-PHOTO] Starting multi-tier search...');
 
-    // 2️⃣ Load stocks with image hashes
-    const stocks = await this.stockRepository.find({
-      relations: ['shades'],
-    });
+      // 1️⃣ TIER 1: Try perceptual hash search first (fast)
+      const queryHash = await this.getImageHash(imagePath);
 
-    const candidates = stocks.filter(
-      s => s.imageHash && s.imageHash.length === queryHash.length,
-    );
+      const stocks = await this.stockRepository.find({
+        relations: ['shades'],
+      });
 
-    if (!candidates.length) {
-      return [];
-    }
+      const candidates = stocks.filter(
+        s => s.imageHash && s.imageHash.length === queryHash.length,
+      );
 
-    const results = [];
+      if (candidates.length > 0) {
+        const results = [];
 
-    // 3️⃣ Compare hashes → similarity %
-    for (const stock of candidates) {
-      const distance = this.hammingDistance(queryHash, stock.imageHash);
+        // Compare hashes → similarity %
+        for (const stock of candidates) {
+          const distance = this.hammingDistance(queryHash, stock.imageHash);
+          const similarity = (1 - distance / queryHash.length) * 100;
 
-      const similarity =
-        (1 - distance / queryHash.length) * 100;
+          if (similarity >= 60) {
+            results.push({
+              ...stock,
+              similarity: Math.round(similarity),
+              searchMethod: 'hash',
+            });
+          }
+        }
 
-      if (similarity >= 60) {
-        results.push({
-          ...stock,
-          similarity: Math.round(similarity),
-        });
+        // If we found good matches with hash, return them
+        if (results.length > 0) {
+          results.sort((a, b) => b.similarity - a.similarity);
+          console.log(`[SEARCH-BY-PHOTO] Found ${results.length} matches using hash search`);
+          return results;
+        }
       }
-    }
 
-    // 4️⃣ Best matches first
-    results.sort((a, b) => b.similarity - a.similarity);
-
-    return results;
-  } catch (error) {
-    console.error('Error searching by photo:', error);
-    throw error;
-  } finally {
-    // 5️⃣ Cleanup uploaded search image
-    if (existsSync(imagePath)) {
-      try {
-        unlinkSync(imagePath);
-      } catch (e) {
-        console.error('Failed to cleanup search image:', e);
+      // 2️⃣ TIER 2: No hash matches found, try Google AI fallback
+      console.log('[SEARCH-BY-PHOTO] No hash matches found, trying Google AI fallback...');
+      return await this.searchByPhotoWithAI(imagePath);
+    } catch (error) {
+      console.error('Error searching by photo:', error);
+      throw error;
+    } finally {
+      // Cleanup uploaded search image
+      if (existsSync(imagePath)) {
+        try {
+          unlinkSync(imagePath);
+        } catch (e) {
+          console.error('Failed to cleanup search image:', e);
+        }
       }
     }
   }
-}
+
+  /**
+   * AI-powered image search using Google Gemini Vision
+   * This is the fallback when perceptual hash search finds no matches
+   */
+  async searchByPhotoWithAI(imagePath: string): Promise<any[]> {
+    try {
+      // Check if Google AI service is available
+      if (!this.googleAiService || !this.googleAiService.isAvailable()) {
+        console.warn('[SEARCH-BY-PHOTO-AI] Google AI service not available');
+        return [];
+      }
+
+      console.log('[SEARCH-BY-PHOTO-AI] Using Google AI for deep image search...');
+
+      // Analyze the uploaded image
+      const uploadedImageDescription = await this.googleAiService.analyzeImage(imagePath);
+      console.log('[SEARCH-BY-PHOTO-AI] Image analysis:', uploadedImageDescription);
+
+      // Get all stocks with images
+      const stocks = await this.stockRepository.find({
+        where: { imagePath: Not(IsNull()) },
+        relations: ['shades'],
+      });
+
+      if (stocks.length === 0) {
+        console.log('[SEARCH-BY-PHOTO-AI] No stocks with images found');
+        return [];
+      }
+
+      // Compare uploaded image with each stock image
+      const results = [];
+
+      for (const stock of stocks) {
+        try {
+          const stockImagePath = `.${stock.imagePath}`;
+
+          if (!existsSync(stockImagePath)) {
+            console.warn(`[SEARCH-BY-PHOTO-AI] Stock image not found: ${stockImagePath}`);
+            continue;
+          }
+
+          // Compare images using AI
+          const comparison = await this.googleAiService.compareImages(
+            imagePath,
+            stockImagePath,
+          );
+
+          // Only include results with reasonable similarity
+          if (comparison.similarity >= 60) {
+            results.push({
+              ...stock,
+              similarity: comparison.similarity,
+              searchMethod: 'ai',
+              aiExplanation: comparison.explanation,
+              aiDescription: uploadedImageDescription,
+            });
+          }
+        } catch (error) {
+          console.error(`[SEARCH-BY-PHOTO-AI] Error comparing with stock ${stock.id}:`, error);
+          // Continue with other stocks
+        }
+      }
+
+      // Sort by similarity
+      results.sort((a, b) => b.similarity - a.similarity);
+
+      console.log(`[SEARCH-BY-PHOTO-AI] Found ${results.length} matches using AI search`);
+      return results;
+    } catch (error) {
+      console.error('[SEARCH-BY-PHOTO-AI] Error in AI search:', error);
+      // Return empty array instead of throwing to allow graceful degradation
+      return [];
+    }
+  }
   async adjustStock(id: number, adjustStockDto: AdjustStockDto, username: string): Promise<Stock> {
     try {
       const stock = await this.findOne(id);
@@ -881,40 +962,40 @@ async searchByPhoto(imagePath: string): Promise<any[]> {
   }
 
   // Upload image, compute image hash locally, and store both path + hash
-async uploadImage(
-  id: number,
-  imagePath: string,
-  username: string,
-): Promise<Stock> {
-  const stock = await this.findOne(id);
+  async uploadImage(
+    id: number,
+    imagePath: string,
+    username: string,
+  ): Promise<Stock> {
+    const stock = await this.findOne(id);
 
-  const fullPath = `.${imagePath}`;
+    const fullPath = `.${imagePath}`;
 
-  if (!existsSync(fullPath)) {
-    throw new NotFoundException(
-      `Image file not found at path: ${fullPath}`,
+    if (!existsSync(fullPath)) {
+      throw new NotFoundException(
+        `Image file not found at path: ${fullPath}`,
+      );
+    }
+
+    // 🔥 HASH IMAGE (ONCE, HERE)
+    const imageHash = await this.getImageHash(fullPath);
+
+    stock.imagePath = imagePath;
+    stock.imageHash = imageHash;
+
+    await this.stockRepository.save(stock);
+
+    await this.trackingService.logAction(
+      stock,
+      StockAction.IMAGE_UPLOAD,
+      username,
+      'Image uploaded and indexed',
+      { oldImagePath: stock.imagePath },
+      { newImagePath: imagePath },
     );
+
+    return stock;
   }
-
-  // 🔥 HASH IMAGE (ONCE, HERE)
-  const imageHash = await this.getImageHash(fullPath);
-
-  stock.imagePath = imagePath;
-  stock.imageHash = imageHash;
-
-  await this.stockRepository.save(stock);
-
-  await this.trackingService.logAction(
-    stock,
-    StockAction.IMAGE_UPLOAD,
-    username,
-    'Image uploaded and indexed',
-    { oldImagePath: stock.imagePath },
-    { newImagePath: imagePath },
-  );
-
-  return stock;
-}
 
   // Helper methods
   private prepareCompleteStockData(stock: Stock): any {

@@ -11,7 +11,12 @@ import Cookies from "js-cookie";
 const RoleGuard: React.FC = () => {
   const location = useLocation();
   const userData = Cookies.get("user");
-  const user = userData ? JSON.parse(userData) : null;
+  let user = null;
+  try {
+    user = userData ? JSON.parse(userData) : null;
+  } catch (e) {
+    console.error("Failed to parse user data from cookie", e);
+  }
   const role = user?.role || "user";
 
   const path = location.pathname;
@@ -47,9 +52,8 @@ const LayoutContent: React.FC = () => {
       </div>
 
       <div
-        className={`flex-1 transition-all duration-300 ease-in-out ${
-          isExpanded || isHovered ? "lg:ml-[290px]" : "lg:ml-[90px]"
-        } ${isMobileOpen ? "ml-0" : ""}`}
+        className={`flex-1 transition-all duration-300 ease-in-out ${isExpanded || isHovered ? "lg:ml-[290px]" : "lg:ml-[90px]"
+          } ${isMobileOpen ? "ml-0" : ""}`}
       >
         <AppHeader onChatToggle={() => setIsChatOpen(!isChatOpen)} />
 
