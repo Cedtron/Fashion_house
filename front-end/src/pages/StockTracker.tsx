@@ -598,7 +598,7 @@ export default function StockReduction() {
                                 }`}>
                                 {stock.quantity} units
                               </span>
-                              <span className="text-xs font-medium">${stock.price}</span>
+                              <span className="text-xs font-medium">Ugx {stock.price}</span>
                             </div>
                             {stock.shades && stock.shades.length > 0 && (
                               <div className="flex gap-1 mt-2">

@@ -1872,7 +1872,7 @@ const StockHistory = () => {
                       <strong>Current Stock:</strong> {stock?.quantity} units
                     </div>
                     <div>
-                      <strong>Price:</strong> ${stock?.price.toFixed(2)}
+                      <strong>Price:</strong> Ugx {stock?.price.toFixed(2)}
                     </div>
                   </div>
                   {summaryStats && (

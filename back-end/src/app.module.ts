@@ -12,6 +12,7 @@ import { StockModule } from './stock/stock.module';
 import { CommonModule } from './common/common.module';
 import { ShadesModule } from './shades/shades.module';
 import { GoogleAiModule } from './vertex-ai/vertex-ai.module';
+import { RekognitionModule } from './rekognition/rekognition.module';
 
 @Module({
   imports: [
@@ -34,7 +35,8 @@ import { GoogleAiModule } from './vertex-ai/vertex-ai.module';
     SqlModule,
     StockModule,
     ShadesModule,
-    GoogleAiModule
+    GoogleAiModule,
+    RekognitionModule
   ],
   controllers: [],
   providers: [],

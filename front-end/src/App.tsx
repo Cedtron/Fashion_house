@@ -68,7 +68,7 @@ export default function App() {
           <Route path="settings" element={<Settings />} />
           <Route path="suppliers" element={<Suppliers />} />
           <Route path="stock" element={<StockTracker />} />
-          <Route path="stock_management" element={<StockPage />} />
+          <Route path="stock-management" element={<StockPage />} />
           <Route path=":id/history" element={<StockHistory />} />
           <Route path="users" element={<Users />} />
           <Route path="profile" element={<UserProfile />} />

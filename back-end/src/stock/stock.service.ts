@@ -9,7 +9,7 @@ import { AdjustStockDto } from './dto/adjust-stock.dto';
 import { SearchStockDto } from './dto/search-stock.dto';
 import { StockTrackingService } from './stock-tracking.service';
 import { StockAction, StockTracking } from '../entities/stock-tracking.entity';
-import { GoogleAiService } from '../vertex-ai/vertex-ai.service';
+import { RekognitionService } from '../rekognition/rekognition.service';
 import { existsSync, unlinkSync } from 'fs';
 
 // =============== FIXED JIMP IMPORT ===============
@@ -31,7 +31,7 @@ export class StockService {
     @InjectRepository(Shade)
     private readonly shadeRepository: Repository<Shade>,
     private readonly trackingService: StockTrackingService,
-    private readonly googleAiService: GoogleAiService,
+    private readonly rekognitionService: RekognitionService,
   ) { }
 
   private async generateStockId(): Promise<string> {
@@ -729,9 +729,16 @@ export class StockService {
         }
       }
 
-      // 2️⃣ TIER 2: No hash matches found, try Google AI fallback
-      console.log('[SEARCH-BY-PHOTO] No hash matches found, trying Google AI fallback...');
-      return await this.searchByPhotoWithAI(imagePath);
+      // 2️⃣ TIER 2: No hash matches found, try Amazon Rekognition fallback
+      console.log('[SEARCH-BY-PHOTO] No hash matches found, trying Amazon Rekognition fallback...');
+      
+      // Check if Rekognition service is available
+      if (this.rekognitionService && this.rekognitionService.isAvailable()) {
+        return await this.searchByPhotoWithRekognition(imagePath);
+      } else {
+        console.log('[SEARCH-BY-PHOTO] Amazon Rekognition not available, returning empty results');
+        return [];
+      }
     } catch (error) {
       console.error('Error searching by photo:', error);
       throw error;
@@ -751,19 +758,19 @@ export class StockService {
    * AI-powered image search using Google Gemini Vision
    * This is the fallback when perceptual hash search finds no matches
    */
-  async searchByPhotoWithAI(imagePath: string): Promise<any[]> {
+  async searchByPhotoWithRekognition(imagePath: string): Promise<any[]> {
     try {
-      // Check if Google AI service is available
-      if (!this.googleAiService || !this.googleAiService.isAvailable()) {
-        console.warn('[SEARCH-BY-PHOTO-AI] Google AI service not available');
+      // Check if Amazon Rekognition service is available
+      if (!this.rekognitionService || !this.rekognitionService.isAvailable()) {
+        console.warn('[SEARCH-BY-PHOTO-REKOGNITION] Amazon Rekognition service not available');
         return [];
       }
 
-      console.log('[SEARCH-BY-PHOTO-AI] Using Google AI for deep image search...');
+      console.log('[SEARCH-BY-PHOTO-REKOGNITION] Using Amazon Rekognition for deep image search...');
 
       // Analyze the uploaded image
-      const uploadedImageDescription = await this.googleAiService.analyzeImage(imagePath);
-      console.log('[SEARCH-BY-PHOTO-AI] Image analysis:', uploadedImageDescription);
+      const uploadedImageDescription = await this.rekognitionService.analyzeImage(imagePath);
+      console.log('[SEARCH-BY-PHOTO-REKOGNITION] Image analysis:', uploadedImageDescription);
 
       // Get all stocks with images
       const stocks = await this.stockRepository.find({
@@ -772,7 +779,7 @@ export class StockService {
       });
 
       if (stocks.length === 0) {
-        console.log('[SEARCH-BY-PHOTO-AI] No stocks with images found');
+        console.log('[SEARCH-BY-PHOTO-REKOGNITION] No stocks with images found');
         return [];
       }
 
@@ -784,28 +791,28 @@ export class StockService {
           const stockImagePath = `.${stock.imagePath}`;
 
           if (!existsSync(stockImagePath)) {
-            console.warn(`[SEARCH-BY-PHOTO-AI] Stock image not found: ${stockImagePath}`);
+            console.warn(`[SEARCH-BY-PHOTO-REKOGNITION] Stock image not found: ${stockImagePath}`);
             continue;
           }
 
-          // Compare images using AI
-          const comparison = await this.googleAiService.compareImages(
+          // Compare images using Amazon Rekognition
+          const comparison = await this.rekognitionService.compareImages(
             imagePath,
             stockImagePath,
           );
 
-          // Only include results with reasonable similarity
+          // Only include results with 60% or higher similarity
           if (comparison.similarity >= 60) {
             results.push({
               ...stock,
               similarity: comparison.similarity,
-              searchMethod: 'ai',
-              aiExplanation: comparison.explanation,
-              aiDescription: uploadedImageDescription,
+              searchMethod: 'rekognition',
+              rekognitionExplanation: comparison.explanation,
+              rekognitionDescription: uploadedImageDescription,
             });
           }
         } catch (error) {
-          console.error(`[SEARCH-BY-PHOTO-AI] Error comparing with stock ${stock.id}:`, error);
+          console.error(`[SEARCH-BY-PHOTO-REKOGNITION] Error comparing with stock ${stock.id}:`, error);
           // Continue with other stocks
         }
       }
@@ -813,11 +820,14 @@ export class StockService {
       // Sort by similarity
       results.sort((a, b) => b.similarity - a.similarity);
 
-      console.log(`[SEARCH-BY-PHOTO-AI] Found ${results.length} matches using AI search`);
+      console.log(`[SEARCH-BY-PHOTO-REKOGNITION] Found ${results.length} matches using Rekognition search`);
       return results;
     } catch (error) {
-      console.error('[SEARCH-BY-PHOTO-AI] Error in AI search:', error);
+      console.error('[SEARCH-BY-PHOTO-REKOGNITION] Error in Rekognition search:', error);
       // Return empty array instead of throwing to allow graceful degradation
+      return [];
+    }
+  }
       return [];
     }
   }

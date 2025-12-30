@@ -16,29 +16,34 @@ RUN --mount=type=cache,target=/root/.npm \
 # Copy the rest of the application source code
 COPY --link . .
 
-# Build the production-ready static files (assumes Vite or similar)
+# Build the production-ready static files
 RUN --mount=type=cache,target=/root/.npm \
     npm run build
 
-# Production stage
-FROM node:${NODE_VERSION}-slim AS final
-WORKDIR /app
+# Production stage - Use nginx for serving static files
+FROM nginx:alpine AS final
 
-# Create a non-root user for security
-RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
+# Copy built assets to nginx html directory
+COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Copy only the built assets and necessary files from builder
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/package.json ./
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/index.html ./index.html
+# Copy custom nginx configuration
+COPY nginx.conf /etc/nginx/nginx.conf
 
-ENV NODE_ENV=production
-ENV NODE_OPTIONS="--max-old-space-size=4096"
+# Create non-root user for security
+RUN addgroup -g 1001 -S appgroup && \
+    adduser -S appuser -u 1001 -G appgroup
+
+# Set proper permissions
+RUN chown -R appuser:appgroup /usr/share/nginx/html && \
+    chown -R appuser:appgroup /var/cache/nginx && \
+    chown -R appuser:appgroup /var/log/nginx && \
+    chown -R appuser:appgroup /etc/nginx/conf.d
+
+RUN touch /var/run/nginx.pid && \
+    chown -R appuser:appgroup /var/run/nginx.pid
 
 USER appuser
 
-EXPOSE 5173
+EXPOSE 80
 
-CMD ["npm", "start"]
+CMD ["nginx", "-g", "daemon off;"]

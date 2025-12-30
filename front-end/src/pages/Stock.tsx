@@ -542,7 +542,7 @@ export default function StockPage() {
         toast.info("No similar products found");
       } else {
         const method = response.data[0]?.searchMethod;
-        const methodText = method === 'ai' ? 'AI-powered search' : 'hash-based search';
+        const methodText = method === 'rekognition' ? 'Amazon Rekognition' : 'hash-based search';
         toast.success(`Found ${response.data.length} similar products using ${methodText}!`);
       }
     } catch (error: any) {
@@ -731,8 +731,8 @@ export default function StockPage() {
                       </span>
                     </td>
                     <td className="p-3 font-semibold text-center">{item.quantity}</td>
-                    <td className="p-3 text-center">${item.cost.toFixed(2)}</td>
-                    <td className="p-3 text-center">${item.price.toFixed(2)}</td>
+                    <td className="p-3 text-center">Ugx {item.cost.toFixed(2)}</td>
+                    <td className="p-3 text-center">Ugx {item.price.toFixed(2)}</td>
                     <td className="p-3">
                       {item.shades?.length > 0 ? (
                         <div className="text-xs">
@@ -1437,10 +1437,10 @@ export default function StockPage() {
                                     {result.similarity}%
                                   </div>
                                   <div className="text-xs px-2 py-1 rounded mt-1 inline-block" style={{
-                                    backgroundColor: result.searchMethod === 'ai' ? '#3b82f6' : '#10b981',
+                                    backgroundColor: result.searchMethod === 'rekognition' ? '#f59e0b' : '#10b981',
                                     color: 'white'
                                   }}>
-                                    {result.searchMethod === 'ai' ? '🤖 AI' : '# Hash'}
+                                    {result.searchMethod === 'rekognition' ? '🔍 Rekognition' : '# Hash'}
                                   </div>
                                 </div>
                               </div>
@@ -1453,10 +1453,10 @@ export default function StockPage() {
                                 <span className="dark:text-white">{result.quantity}</span>
                               </div>
 
-                              {result.aiExplanation && (
-                                <div className="mt-2 p-2 text-xs bg-blue-50 dark:bg-blue-900/20 rounded">
-                                  <p className="font-medium text-blue-900 dark:text-blue-300">AI Analysis:</p>
-                                  <p className="text-blue-800 dark:text-blue-400 mt-1">{result.aiExplanation}</p>
+                              {result.rekognitionExplanation && (
+                                <div className="mt-2 p-2 text-xs bg-amber-50 dark:bg-amber-900/20 rounded">
+                                  <p className="font-medium text-amber-900 dark:text-amber-300">Rekognition Analysis:</p>
+                                  <p className="text-amber-800 dark:text-amber-400 mt-1">{result.rekognitionExplanation}</p>
                                 </div>
                               )}
 

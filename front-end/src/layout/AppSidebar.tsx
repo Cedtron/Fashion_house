@@ -38,7 +38,7 @@ const navItems: NavItem[] = [
   { iconFilled: <BsBasket2Fill />, iconOutline: <BsBasket2 />, name: "Stock Management", path: "/app/stock-management" },
   { iconFilled: <IoAlbums />, iconOutline: <IoAlbumsOutline />, name: "Categories", path: "/app/categories" },
   { iconFilled: <IoDocumentText />, iconOutline: <IoDocumentTextOutline />, name: "Suppliers", path: "/app/suppliers" },
-  { iconFilled: <IoPieChart />, iconOutline: <IoPieChartOutline />, name: "Reports", path: "/app/reports" },
+  { iconFilled: <IoPieChart />, iconOutline: <IoPieChartOutline />, name: "Reports", path: "/app/report" },
   {
     iconFilled: <IoSettings />,
     iconOutline: <IoSettingsOutline />,

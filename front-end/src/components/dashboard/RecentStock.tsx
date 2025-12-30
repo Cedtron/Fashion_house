@@ -137,7 +137,7 @@ const RecentStock: React.FC<RecentStockProps> = ({
                   <span className="px-2 py-1 text-gray-700 bg-gray-200 rounded-md">
                     {stock.category}
                   </span>
-                  <span className="font-medium text-gray-700">${stock.price}</span>
+                  <span className="font-medium text-gray-700">Ugx {stock.price}</span>
                 </div>
 
                 {/* Shades */}

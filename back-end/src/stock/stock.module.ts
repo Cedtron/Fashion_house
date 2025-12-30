@@ -6,12 +6,12 @@ import { Stock } from '../entities/stock.entity';
 import { Shade } from '../entities/shade.entity';
 import { StockTracking } from '../entities/stock-tracking.entity';
 import { StockTrackingService } from './stock-tracking.service';
-import { GoogleAiModule } from '../vertex-ai/vertex-ai.module';
+import { RekognitionModule } from '../rekognition/rekognition.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Stock, Shade, StockTracking]), // Add Shade here
-    GoogleAiModule,
+    RekognitionModule,
   ],
   controllers: [StockController],
   providers: [StockService, StockTrackingService],
