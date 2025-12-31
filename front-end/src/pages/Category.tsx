@@ -158,7 +158,7 @@ export default function Category() {
                   }
                 })}
                 placeholder="Enter category name"
-                className={`w-full rounded-md border px-4 py-2 text-sm focus:border-indigo-500 focus:outline-none ${
+                className={`w-full rounded-md border px-4 py-2 text-sm focus:border-coffee-500 focus:outline-none ${
                   errors.name ? "border-red-500" : "border-gray-300"
                 } dark:bg-gray-800 dark:text-white dark:border-gray-700`}
                 aria-label="Category Name"
@@ -171,7 +171,7 @@ export default function Category() {
             <div className="flex gap-2">
               <button
                 type="submit"
-                className="flex items-center justify-center flex-1 gap-2 px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700"
+                className="flex items-center justify-center flex-1 gap-2 px-4 py-2 text-sm font-medium text-white bg-coffee-600 rounded-md hover:bg-coffee-700"
               >
                 {editingId ? (
                   <>

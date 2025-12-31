@@ -150,7 +150,7 @@ export default function SubCategory() {
 
             <Link
               to="/app/category"
-              className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+              className="inline-flex items-center gap-2 rounded-md bg-coffee-600 px-4 py-2 text-sm font-medium text-white hover:bg-coffee-700"
             >
               Categories <FiArrowRight />
             </Link>
@@ -167,7 +167,7 @@ export default function SubCategory() {
                   required: "Category is required",
                   valueAsNumber: true 
                 })}
-                className={`w-full rounded-md border px-4 py-2 text-sm focus:border-indigo-500 focus:outline-none ${
+                className={`w-full rounded-md border px-4 py-2 text-sm focus:border-coffee-500 focus:outline-none ${
                   errors.categoryId ? "border-red-500" : "border-gray-300"
                 } dark:bg-gray-800 dark:text-white dark:border-gray-700`}
               >
@@ -194,7 +194,7 @@ export default function SubCategory() {
                   }
                 })}
                 placeholder="Subcategory Name"
-                className={`w-full rounded-md border px-4 py-2 text-sm focus:border-indigo-500 focus:outline-none ${
+                className={`w-full rounded-md border px-4 py-2 text-sm focus:border-coffee-500 focus:outline-none ${
                   errors.name ? "border-red-500" : "border-gray-300"
                 } dark:bg-gray-800 dark:text-white dark:border-gray-700`}
               />
@@ -206,7 +206,7 @@ export default function SubCategory() {
             <div className="flex gap-2">
               <button
                 type="submit"
-                className="flex flex-1 items-center justify-center gap-2 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+                className="flex flex-1 items-center justify-center gap-2 rounded-md bg-coffee-600 px-4 py-2 text-sm font-medium text-white hover:bg-coffee-700"
               >
                 {editingId ? (
                   <>

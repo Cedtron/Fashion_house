@@ -39,6 +39,7 @@ interface Stock {
 interface StockFormData {
   product: string;
   category: string;
+  subcategoryId: number;
   quantity: number;
   cost: number;
   price: number;
@@ -147,6 +148,7 @@ const extractDominantColorsFromImage = (imageUrl: string, maxColors: number = 8)
 export default function StockPage() {
   const [stocks, setStocks] = useState<Stock[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [subcategories, setSubcategories] = useState<any[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [selectedStock, setSelectedStock] = useState<Stock | null>(null);
@@ -174,6 +176,7 @@ export default function StockPage() {
     defaultValues: {
       product: "",
       category: "",
+      subcategoryId: 0,
       quantity: 0,
       cost: 0,
       price: 0,
@@ -188,6 +191,7 @@ export default function StockPage() {
 
   // Watch category and shades
   const watchedCategory = watch("category");
+  const watchedSubcategoryId = watch("subcategoryId");
   const watchedShades = watch("shades") || [];
 
   // Get user from cookies on component mount
@@ -203,15 +207,19 @@ export default function StockPage() {
     }
 
     fetchCategories();
+    fetchSubcategories();
     fetchStocks();
   }, []);
 
-  // Fetch subcategories when category changes
+  // Update category when subcategory changes
   useEffect(() => {
-    if (watchedCategory && watchedCategory !== "Fabric") {
-      fetchSubCategories(watchedCategory);
+    if (watchedSubcategoryId && watchedSubcategoryId > 0) {
+      const selectedSubcategory = subcategories.find(sub => sub.id === watchedSubcategoryId);
+      if (selectedSubcategory) {
+        setValue("category", selectedSubcategory.category.name);
+      }
     }
-  }, [watchedCategory]);
+  }, [watchedSubcategoryId, subcategories, setValue]);
 
   // Auto compute total quantity when shades change for Fabric category
   useEffect(() => {
@@ -234,14 +242,13 @@ export default function StockPage() {
     }
   };
 
-  const fetchSubCategories = async (categoryName: string) => {
+  const fetchSubcategories = async () => {
     try {
-      const category = categories.find(cat => cat.name === categoryName);
-      if (category) {
-        await api.get(`/subcategories?categoryId=${category.id}`);
-      }
+      const response = await api.get('/subcategories');
+      setSubcategories(response.data);
     } catch (error: any) {
       console.error('Error fetching subcategories:', error);
+      toast.error("Failed to load subcategories");
     }
   };
 
@@ -437,6 +444,7 @@ export default function StockPage() {
       const payload: any = {
         product: data.product,
         category: data.category,
+        subcategoryId: data.subcategoryId || null,
         quantity: Number(data.quantity) || 0,
         cost: Number(data.cost) || 0,
         price: Number(data.price) || 0,
@@ -607,11 +615,16 @@ export default function StockPage() {
       setValue("cost", item.cost);
       setValue("price", item.price);
       setValue("shades", item.shades || []);
-      setPreview(item.imagePath ? `${api.defaults.baseURL}${item.imagePath}` : null);
-
-      if (item.category && item.category !== "Fabric") {
-        fetchSubCategories(item.category);
+      
+      // Find and set subcategory if it exists
+      const matchingSubcategory = subcategories.find(sub => 
+        sub.category.name === item.category
+      );
+      if (matchingSubcategory) {
+        setValue("subcategoryId", matchingSubcategory.id);
       }
+      
+      setPreview(item.imagePath ? `${api.defaults.baseURL}${item.imagePath}` : null);
     } else {
       reset();
       setPreview(null);
@@ -839,23 +852,32 @@ export default function StockPage() {
                   </label>
                 </div>
 
-                {/* Category Selection (only show when not in fabric mode) */}
+                {/* Subcategory Selection (only show when not in fabric mode) */}
                 {watchedCategory !== "Fabric" && (
                   <div>
                     <select
-                      {...register("category", { required: "Category is required" })}
+                      {...register("subcategoryId", { 
+                        required: "Subcategory is required",
+                        valueAsNumber: true 
+                      })}
                       className="w-full px-3 py-2 border rounded-md outline-none focus:ring-2 focus:ring-coffee-500 dark:bg-gray-700 dark:text-white dark:border-gray-600"
                     >
-                      <option value="">Select Category</option>
-                      {categories.map((category) => (
-                        <option key={category.id} value={category.name}>
-                          {category.name}
+                      <option value="">Select Subcategory</option>
+                      {subcategories.map((subcategory) => (
+                        <option key={subcategory.id} value={subcategory.id}>
+                          {subcategory.category.name} - {subcategory.name}
                         </option>
                       ))}
                     </select>
-                    <p className="mt-1 text-xs text-gray-500">Choose product category</p>
+                    <p className="mt-1 text-xs text-gray-500">Choose product subcategory (category will be auto-selected)</p>
                   </div>
                 )}
+
+                {/* Hidden Category Field */}
+                <input
+                  type="hidden"
+                  {...register("category")}
+                />
 
                 {/* Quantity and prices */}
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">

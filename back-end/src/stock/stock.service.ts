@@ -828,9 +828,7 @@ export class StockService {
       return [];
     }
   }
-      return [];
-    }
-  }
+
   async adjustStock(id: number, adjustStockDto: AdjustStockDto, username: string): Promise<Stock> {
     try {
       const stock = await this.findOne(id);

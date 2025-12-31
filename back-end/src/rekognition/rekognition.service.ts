@@ -17,9 +17,18 @@ try {
 @Injectable()
 export class RekognitionService {
   private readonly logger = new Logger(RekognitionService.name);
-  private readonly rekognitionClient: RekognitionClient | null = null;
+  private readonly rekognitionClient: any = null;
+  private readonly skipRekognition: boolean;
 
   constructor(private configService: ConfigService) {
+    // Check if Amazon Rekognition should be skipped
+    this.skipRekognition = this.configService.get<string>('SKIP_AMAZON_REKOGNITION') === 'true';
+    
+    if (this.skipRekognition) {
+      this.logger.log('Amazon Rekognition is disabled via SKIP_AMAZON_REKOGNITION=true');
+      return;
+    }
+
     // Check if AWS SDK is available
     if (!RekognitionClient || !DetectLabelsCommand) {
       this.logger.warn('AWS SDK not installed. Amazon Rekognition image search will be disabled.');
@@ -53,6 +62,9 @@ export class RekognitionService {
    * Check if Amazon Rekognition is available
    */
   isAvailable(): boolean {
+    if (this.skipRekognition) {
+      return false;
+    }
     return this.rekognitionClient !== null;
   }
 
