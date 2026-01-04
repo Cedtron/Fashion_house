@@ -1,13 +1,17 @@
 import { useState } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
+import { toast } from "react-toastify";
 import { ChevronLeftIcon, EyeCloseIcon, EyeIcon } from "../../icons";
 import Label from "../form/Label";
 import Input from "../form/input/InputField";
 import Button from "../ui/button/Button";
+import api from "../../utils/axios";
 
 export default function ForgotPasswordForm() {
   const [step, setStep] = useState(1);
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
   const [formData, setFormData] = useState({
     email: "",
     code: "",
@@ -15,36 +19,110 @@ export default function ForgotPasswordForm() {
     confirmPassword: "",
   });
 
-  // sample email for demo
-  const sampleUser = "demo@fashionhouse.com";
-  const sampleCode = "123456";
-
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleNext = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleNext = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (step === 1) {
-      if (formData.email === sampleUser) {
+    setLoading(true);
+
+    try {
+      if (step === 1) {
+        // Step 1: Request reset code
+        if (!formData.email) {
+          toast.error("Please enter your email address");
+          return;
+        }
+
+        const response = await api.post('/users/forgot-password', {
+          email: formData.email
+        });
+
+        toast.success("Reset code sent to your email!");
         setStep(2);
-      } else {
-        alert("Email not found in system (sample check)");
-      }
-    } else if (step === 2) {
-      if (formData.code === sampleCode) {
-        setStep(3);
-      } else {
-        alert("Invalid secret code (sample check)");
-      }
-    } else if (step === 3) {
-      if (formData.newPassword && formData.newPassword === formData.confirmPassword) {
-        alert("Password reset successful (sample only)");
-        setStep(1);
+
+      } else if (step === 2) {
+        // Step 2: Verify reset code
+        if (!formData.code) {
+          toast.error("Please enter the verification code");
+          return;
+        }
+
+        const response = await api.post('/users/verify-reset-code', {
+          email: formData.email,
+          code: formData.code
+        });
+
+        if (response.data.valid) {
+          toast.success("Code verified successfully!");
+          setStep(3);
+        }
+
+      } else if (step === 3) {
+        // Step 3: Reset password
+        if (!formData.newPassword) {
+          toast.error("Please enter a new password");
+          return;
+        }
+
+        if (formData.newPassword.length < 6) {
+          toast.error("Password must be at least 6 characters long");
+          return;
+        }
+
+        if (formData.newPassword !== formData.confirmPassword) {
+          toast.error("Passwords do not match");
+          return;
+        }
+
+        const response = await api.post('/users/reset-password', {
+          email: formData.email,
+          code: formData.code,
+          newPassword: formData.newPassword
+        });
+
+        toast.success("Password reset successfully!");
+        
+        // Reset form and redirect to login
         setFormData({ email: "", code: "", newPassword: "", confirmPassword: "" });
-      } else {
-        alert("Passwords do not match");
+        setStep(1);
+        
+        // Redirect to login after a short delay
+        setTimeout(() => {
+          navigate('/signin');
+        }, 2000);
       }
+    } catch (error: any) {
+      console.error('Forgot password error:', error);
+      
+      if (error.response?.data?.message) {
+        toast.error(error.response.data.message);
+      } else {
+        toast.error("An error occurred. Please try again.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleBack = () => {
+    if (step > 1) {
+      setStep(step - 1);
+    }
+  };
+
+  const handleResendCode = async () => {
+    setLoading(true);
+    try {
+      await api.post('/users/forgot-password', {
+        email: formData.email
+      });
+      toast.success("New code sent to your email!");
+    } catch (error: any) {
+      toast.error("Failed to resend code. Please try again.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -81,24 +159,43 @@ export default function ForgotPasswordForm() {
                 <Input
                   name="email"
                   type="email"
-                  placeholder="example@fashionhouse.com"
+                  placeholder="Enter your registered email"
                   value={formData.email}
                   onChange={handleChange}
+                  required
                 />
+                <p className="mt-2 text-sm text-gray-500">
+                  We'll send a 6-digit verification code to this email.
+                </p>
               </div>
             )}
 
             {/* STEP 2 — SECRET CODE */}
             {step === 2 && (
               <div>
-                <Label>Secret Code <span className="text-error-500">*</span></Label>
+                <Label>Verification Code <span className="text-error-500">*</span></Label>
                 <Input
                   name="code"
                   type="text"
-                  placeholder="Enter the code sent to your email"
+                  placeholder="Enter 6-digit code"
                   value={formData.code}
                   onChange={handleChange}
+                  maxLength={6}
+                  required
                 />
+                <div className="mt-2 flex items-center justify-between">
+                  <p className="text-sm text-gray-500">
+                    Code sent to {formData.email}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleResendCode}
+                    disabled={loading}
+                    className="text-sm text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                  >
+                    Resend Code
+                  </button>
+                </div>
               </div>
             )}
 
@@ -111,9 +208,11 @@ export default function ForgotPasswordForm() {
                     <Input
                       name="newPassword"
                       type={showPassword ? "text" : "password"}
-                      placeholder="Enter new password"
+                      placeholder="Enter new password (min 6 characters)"
                       value={formData.newPassword}
                       onChange={handleChange}
+                      minLength={6}
+                      required
                     />
                     <span
                       onClick={() => setShowPassword(!showPassword)}
@@ -136,14 +235,29 @@ export default function ForgotPasswordForm() {
                     placeholder="Re-enter new password"
                     value={formData.confirmPassword}
                     onChange={handleChange}
+                    minLength={6}
+                    required
                   />
                 </div>
               </>
             )}
 
             <div>
-              <Button className="w-full" size="sm">
-                {step === 1 ? "Next" : step === 2 ? "Verify Code" : "Reset Password"}
+              <Button 
+                className="w-full" 
+                size="sm" 
+                disabled={loading}
+              >
+                {loading ? (
+                  <div className="flex items-center justify-center">
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                    Processing...
+                  </div>
+                ) : (
+                  <>
+                    {step === 1 ? "Send Reset Code" : step === 2 ? "Verify Code" : "Reset Password"}
+                  </>
+                )}
               </Button>
             </div>
 
@@ -151,13 +265,32 @@ export default function ForgotPasswordForm() {
               <div className="text-center mt-3">
                 <button
                   type="button"
-                  onClick={() => setStep(step - 1)}
-                  className="text-sm text-gray-500 hover:underline"
+                  onClick={handleBack}
+                  disabled={loading}
+                  className="text-sm text-gray-500 hover:underline disabled:opacity-50"
                 >
                   ← Back
                 </button>
               </div>
             )}
+
+            {/* Progress indicator */}
+            <div className="flex justify-center mt-6">
+              <div className="flex space-x-2">
+                {[1, 2, 3].map((stepNumber) => (
+                  <div
+                    key={stepNumber}
+                    className={`w-3 h-3 rounded-full ${
+                      stepNumber === step
+                        ? 'bg-blue-600'
+                        : stepNumber < step
+                        ? 'bg-green-500'
+                        : 'bg-gray-300'
+                    }`}
+                  />
+                ))}
+              </div>
+            </div>
           </div>
         </form>
       </div>
