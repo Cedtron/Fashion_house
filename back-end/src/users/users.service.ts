@@ -60,7 +60,6 @@ export class UsersService {
     return savedUser;
   }
 
-
   async findAll(): Promise<User[]> {
     return this.usersRepository.find({
       select: ['id', 'email', 'username', 'phone', 'role', 'isActive', 'imagePath', 'createdAt', 'updatedAt'],
@@ -82,42 +81,40 @@ export class UsersService {
     return this.usersRepository.findOne({ where: { email } });
   }
 
-async update(id: number, updateUserDto: UpdateUserDto, userId?: number): Promise<User> {
-  const user = await this.findOne(id);
+  async update(id: number, updateUserDto: UpdateUserDto, userId?: number): Promise<User> {
+    const user = await this.findOne(id);
 
-  const changes: any = {};
+    const changes: any = {};
 
-  // Track imagePath
-  if (updateUserDto.imagePath) {
-    changes['imagePath'] = {
-      old: user.imagePath,
-      new: updateUserDto.imagePath,
-    };
-  }
-
-  // Track other changes
-  Object.keys(updateUserDto).forEach((key) => {
-    if (key !== 'password' && user[key] !== updateUserDto[key]) {
-      changes[key] = { old: user[key], new: updateUserDto[key] };
+    // Track imagePath
+    if (updateUserDto.imagePath) {
+      changes['imagePath'] = {
+        old: user.imagePath,
+        new: updateUserDto.imagePath,
+      };
     }
-  });
 
-  // Password hashing
-  if (updateUserDto.password) {
-    updateUserDto.password = await bcrypt.hash(updateUserDto.password, 10);
+    // Track other changes
+    Object.keys(updateUserDto).forEach((key) => {
+      if (key !== 'password' && user[key] !== updateUserDto[key]) {
+        changes[key] = { old: user[key], new: updateUserDto[key] };
+      }
+    });
+
+    // Password hashing
+    if (updateUserDto.password) {
+      updateUserDto.password = await bcrypt.hash(updateUserDto.password, 10);
+    }
+
+    Object.assign(user, updateUserDto);
+    const updatedUser = await this.usersRepository.save(user);
+
+    if (userId) {
+      await this.auditService.logChange('user', 'updated', id, userId, changes);
+    }
+
+    return updatedUser;
   }
-
-  Object.assign(user, updateUserDto);
-  const updatedUser = await this.usersRepository.save(user);
-
-  if (userId) {
-    await this.auditService.logChange('user', 'updated', id, userId, changes);
-  }
-
-  return updatedUser;
-}
-
-
 
   async remove(id: number, userId?: number): Promise<void> {
     const user = await this.findOne(id);
@@ -129,14 +126,18 @@ async update(id: number, updateUserDto: UpdateUserDto, userId?: number): Promise
 
   // =============== FORGOT PASSWORD METHODS ===============
 
-  async forgotPassword(forgotPasswordDto: ForgotPasswordDto): Promise<{ message: string }> {
-    const { email } = forgotPasswordDto;
+  async forgotPassword(forgotPasswordDto: ForgotPasswordDto): Promise<{ message: string; code?: string }> {
+    const { email, passwordHint } = forgotPasswordDto;
 
     // Find user by email
     const user = await this.usersRepository.findOne({ where: { email } });
     if (!user) {
-      // Don't reveal if email exists or not for security
-      return { message: 'If the email exists, a reset code has been sent.' };
+      throw new BadRequestException('Invalid email or password hint');
+    }
+
+    // Validate password hint (case-insensitive comparison)
+    if (user.passwordhint.toLowerCase().trim() !== passwordHint.toLowerCase().trim()) {
+      throw new BadRequestException('Invalid email or password hint');
     }
 
     // Generate 6-digit code
@@ -162,7 +163,7 @@ async update(id: number, updateUserDto: UpdateUserDto, userId?: number): Promise
 
     await this.passwordResetRepository.save(passwordReset);
 
-    // Send email with reset code
+    // Send email with reset code (if email service is available)
     try {
       await this.emailService.sendPasswordResetEmail(email, code, user.username);
     } catch (error) {
@@ -170,129 +171,10 @@ async update(id: number, updateUserDto: UpdateUserDto, userId?: number): Promise
       // Continue anyway - code is still valid
     }
 
-    return { message: 'If the email exists, a reset code has been sent.' };
-  }
-
-  async verifyResetCode(verifyResetCodeDto: VerifyResetCodeDto): Promise<{ message: string; valid: boolean }> {
-    const { email, code } = verifyResetCodeDto;
-
-    // Find user by email
-    const user = await this.usersRepository.findOne({ where: { email } });
-    if (!user) {
-      throw new BadRequestException('Invalid email or code');
-    }
-
-    // Find valid reset code
-    const resetRecord = await this.passwordResetRepository.findOne({
-      where: {
-        userId: user.id,
-        code,
-        isUsed: false,
-      },
-    });
-
-    if (!resetRecord) {
-      throw new BadRequestException('Invalid or expired code');
-    }
-
-    // Check if code is expired
-    if (new Date() > resetRecord.expiresAt) {
-      throw new BadRequestException('Code has expired. Please request a new one.');
-    }
-
-    return { message: 'Code verified successfully', valid: true };
-  }
-
-  async resetPassword(resetPasswordDto: ResetPasswordDto): Promise<{ message: string }> {
-    const { email, code, newPassword } = resetPasswordDto;
-
-    // Find user by email
-    const user = await this.usersRepository.findOne({ where: { email } });
-    if (!user) {
-      throw new BadRequestException('Invalid email or code');
-    }
-
-    // Find valid reset code
-    const resetRecord = await this.passwordResetRepository.findOne({
-      where: {
-        userId: user.id,
-        code,
-        isUsed: false,
-      },
-    });
-
-    if (!resetRecord) {
-      throw new BadRequestException('Invalid or expired code');
-    }
-
-    // Check if code is expired
-    if (new Date() > resetRecord.expiresAt) {
-      throw new BadRequestException('Code has expired. Please request a new one.');
-    }
-
-    // Hash new password
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-
-    // Update user password
-    await this.usersRepository.update(user.id, { password: hashedPassword });
-
-    // Mark reset code as used
-    await this.passwordResetRepository.update(r;
-
-ge
-' };
-  }sfullyreset successword essage: 'Pas return { m
-   );
-   }
- tion'rifica email vet viad reseasswor: 'P    actionid, {
-  d, user..it', user_resepassworde('user', 'hangogCitService.lis.audit th    award chan passwo/ Log the    /ed: true })d.id, { isUsecoresetR
-}
-
-
-  // =============== FORGOT PASSWORD METHODS ===============
-
-  async forgotPassword(forgotPasswordDto: ForgotPasswordDto): Promise<{ message: string }> {
-    const { email } = forgotPasswordDto;
-
-    // Find user by email
-    const user = await this.usersRepository.findOne({ where: { email } });
-    if (!user) {
-      // Don't reveal if email exists or not for security
-      return { message: 'If the email exists, a reset code has been sent.' };
-    }
-
-    // Generate 6-digit code
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-
-    // Set expiration time (15 minutes from now)
-    const expiresAt = new Date();
-    expiresAt.setMinutes(expiresAt.getMinutes() + 15);
-
-    // Invalidate any existing reset codes for this user
-    await this.passwordResetRepository.update(
-      { userId: user.id, isUsed: false },
-      { isUsed: true }
-    );
-
-    // Create new password reset record
-    const passwordReset = this.passwordResetRepository.create({
-      userId: user.id,
-      code,
-      expiresAt,
-      isUsed: false,
-    });
-
-    await this.passwordResetRepository.save(passwordReset);
-
-    // Send email with reset code
-    try {
-      await this.emailService.sendPasswordResetEmail(email, code, user.username);
-    } catch (error) {
-      console.error('Failed to send reset email:', error);
-      // Continue anyway - code is still valid
-    }
-
-    return { message: 'If the email exists, a reset code has been sent.' };
+    return { 
+      message: 'Email and password hint verified successfully. Reset code has been sent to your email.',
+      code: code // Remove this in production - only for testing
+    };
   }
 
   async verifyResetCode(verifyResetCodeDto: VerifyResetCodeDto): Promise<{ message: string; valid: boolean }> {
@@ -368,3 +250,4 @@ ge
 
     return { message: 'Password reset successfully' };
   }
+}

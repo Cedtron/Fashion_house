@@ -1,57 +1,55 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
+import { useForm } from "react-hook-form";
 import { toast } from "react-toastify";
-import { ChevronLeftIcon, EyeCloseIcon, EyeIcon } from "../../icons";
-import Label from "../form/Label";
-import Input from "../form/input/InputField";
-import Button from "../ui/button/Button";
+import { FiChevronLeft, FiEye, FiEyeOff, FiMail, FiLock, FiKey } from "react-icons/fi";
 import api from "../../utils/axios";
+
+interface ForgotPasswordFormData {
+  email: string;
+  passwordHint: string;
+  code: string;
+  newPassword: string;
+  confirmPassword: string;
+}
 
 export default function ForgotPasswordForm() {
   const [step, setStep] = useState(1);
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const [formData, setFormData] = useState({
-    email: "",
-    code: "",
-    newPassword: "",
-    confirmPassword: "",
-  });
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
+  const {
+    register,
+    handleSubmit,
+    watch,
+    formState: { errors },
+    getValues,
+    reset
+  } = useForm<ForgotPasswordFormData>();
 
-  const handleNext = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
+  const watchedPassword = watch("newPassword");
+
+  const onSubmit = async (data: ForgotPasswordFormData) => {
     setLoading(true);
 
     try {
       if (step === 1) {
-        // Step 1: Request reset code
-        if (!formData.email) {
-          toast.error("Please enter your email address");
-          return;
-        }
-
-        const response = await api.post('/users/forgot-password', {
-          email: formData.email
+        // Step 1: Request reset code with email and password hint validation
+        await api.post('/users/forgot-password', {
+          email: data.email,
+          passwordHint: data.passwordHint
         });
 
-        toast.success("Reset code sent to your email!");
+        toast.success("Email and password hint verified! Reset code sent to your email!");
         setStep(2);
 
       } else if (step === 2) {
         // Step 2: Verify reset code
-        if (!formData.code) {
-          toast.error("Please enter the verification code");
-          return;
-        }
-
         const response = await api.post('/users/verify-reset-code', {
-          email: formData.email,
-          code: formData.code
+          email: data.email,
+          code: data.code
         });
 
         if (response.data.valid) {
@@ -61,31 +59,21 @@ export default function ForgotPasswordForm() {
 
       } else if (step === 3) {
         // Step 3: Reset password
-        if (!formData.newPassword) {
-          toast.error("Please enter a new password");
-          return;
-        }
-
-        if (formData.newPassword.length < 6) {
-          toast.error("Password must be at least 6 characters long");
-          return;
-        }
-
-        if (formData.newPassword !== formData.confirmPassword) {
+        if (data.newPassword !== data.confirmPassword) {
           toast.error("Passwords do not match");
           return;
         }
 
-        const response = await api.post('/users/reset-password', {
-          email: formData.email,
-          code: formData.code,
-          newPassword: formData.newPassword
+        await api.post('/users/reset-password', {
+          email: data.email,
+          code: data.code,
+          newPassword: data.newPassword
         });
 
         toast.success("Password reset successfully!");
         
         // Reset form and redirect to login
-        setFormData({ email: "", code: "", newPassword: "", confirmPassword: "" });
+        reset();
         setStep(1);
         
         // Redirect to login after a short delay
@@ -113,10 +101,12 @@ export default function ForgotPasswordForm() {
   };
 
   const handleResendCode = async () => {
+    const values = getValues();
     setLoading(true);
     try {
       await api.post('/users/forgot-password', {
-        email: formData.email
+        email: values.email,
+        passwordHint: values.passwordHint
       });
       toast.success("New code sent to your email!");
     } catch (error: any) {
@@ -133,7 +123,7 @@ export default function ForgotPasswordForm() {
           to="/signin"
           className="inline-flex items-center text-sm text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
         >
-          <ChevronLeftIcon className="size-5" />
+          <FiChevronLeft className="w-5 h-5 mr-1" />
           Back to Sign In
         </Link>
       </div>
@@ -144,155 +134,227 @@ export default function ForgotPasswordForm() {
             Forgot Password
           </h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            {step === 1 && "Enter your registered email to reset your password."}
-            {step === 2 && "Check your email and enter the secret code below."}
+            {step === 1 && "Enter your email and password hint to reset your password."}
+            {step === 2 && "Check your email and enter the verification code below."}
             {step === 3 && "Set your new password below."}
           </p>
         </div>
 
-        <form onSubmit={handleNext}>
-          <div className="space-y-6">
-            {/* STEP 1 — EMAIL */}
-            {step === 1 && (
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+          {/* STEP 1 — EMAIL & PASSWORD HINT */}
+          {step === 1 && (
+            <>
               <div>
-                <Label>Email <span className="text-error-500">*</span></Label>
-                <Input
-                  name="email"
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <FiMail className="inline w-4 h-4 mr-2" />
+                  Email <span className="text-red-500">*</span>
+                </label>
+                <input
                   type="email"
+                  {...register("email", {
+                    required: "Email is required",
+                    pattern: {
+                      value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
+                      message: "Invalid email address"
+                    }
+                  })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   placeholder="Enter your registered email"
-                  value={formData.email}
-                  onChange={handleChange}
-                  required
                 />
+                {errors.email && (
+                  <p className="mt-1 text-sm text-red-600">{errors.email.message}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <FiKey className="inline w-4 h-4 mr-2" />
+                  Password Hint Answer <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  {...register("passwordHint", {
+                    required: "Password hint answer is required",
+                    minLength: {
+                      value: 2,
+                      message: "Password hint answer must be at least 2 characters"
+                    }
+                  })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  placeholder="Enter your password hint answer"
+                />
+                {errors.passwordHint && (
+                  <p className="mt-1 text-sm text-red-600">{errors.passwordHint.message}</p>
+                )}
                 <p className="mt-2 text-sm text-gray-500">
-                  We'll send a 6-digit verification code to this email.
+                  Enter the answer to your password hint question for verification.
                 </p>
               </div>
-            )}
+            </>
+          )}
 
-            {/* STEP 2 — SECRET CODE */}
-            {step === 2 && (
-              <div>
-                <Label>Verification Code <span className="text-error-500">*</span></Label>
-                <Input
-                  name="code"
-                  type="text"
-                  placeholder="Enter 6-digit code"
-                  value={formData.code}
-                  onChange={handleChange}
-                  maxLength={6}
-                  required
-                />
-                <div className="mt-2 flex items-center justify-between">
-                  <p className="text-sm text-gray-500">
-                    Code sent to {formData.email}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={handleResendCode}
-                    disabled={loading}
-                    className="text-sm text-blue-600 hover:text-blue-800 disabled:opacity-50"
-                  >
-                    Resend Code
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 3 — NEW PASSWORD */}
-            {step === 3 && (
-              <>
-                <div>
-                  <Label>New Password <span className="text-error-500">*</span></Label>
-                  <div className="relative">
-                    <Input
-                      name="newPassword"
-                      type={showPassword ? "text" : "password"}
-                      placeholder="Enter new password (min 6 characters)"
-                      value={formData.newPassword}
-                      onChange={handleChange}
-                      minLength={6}
-                      required
-                    />
-                    <span
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute z-30 -translate-y-1/2 cursor-pointer right-4 top-1/2"
-                    >
-                      {showPassword ? (
-                        <EyeIcon className="fill-gray-500 dark:fill-gray-400 size-5" />
-                      ) : (
-                        <EyeCloseIcon className="fill-gray-500 dark:fill-gray-400 size-5" />
-                      )}
-                    </span>
-                  </div>
-                </div>
-
-                <div>
-                  <Label>Confirm Password <span className="text-error-500">*</span></Label>
-                  <Input
-                    name="confirmPassword"
-                    type="password"
-                    placeholder="Re-enter new password"
-                    value={formData.confirmPassword}
-                    onChange={handleChange}
-                    minLength={6}
-                    required
-                  />
-                </div>
-              </>
-            )}
-
+          {/* STEP 2 — VERIFICATION CODE */}
+          {step === 2 && (
             <div>
-              <Button 
-                className="w-full" 
-                size="sm" 
-                disabled={loading}
-              >
-                {loading ? (
-                  <div className="flex items-center justify-center">
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-                    Processing...
-                  </div>
-                ) : (
-                  <>
-                    {step === 1 ? "Send Reset Code" : step === 2 ? "Verify Code" : "Reset Password"}
-                  </>
-                )}
-              </Button>
-            </div>
-
-            {step > 1 && (
-              <div className="text-center mt-3">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <FiKey className="inline w-4 h-4 mr-2" />
+                Verification Code <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                {...register("code", {
+                  required: "Verification code is required",
+                  pattern: {
+                    value: /^\d{6}$/,
+                    message: "Code must be 6 digits"
+                  }
+                })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white text-center text-lg tracking-widest"
+                placeholder="000000"
+                maxLength={6}
+              />
+              {errors.code && (
+                <p className="mt-1 text-sm text-red-600">{errors.code.message}</p>
+              )}
+              <div className="mt-2 flex items-center justify-between">
+                <p className="text-sm text-gray-500">
+                  Code sent to {getValues("email")}
+                </p>
                 <button
                   type="button"
-                  onClick={handleBack}
+                  onClick={handleResendCode}
                   disabled={loading}
-                  className="text-sm text-gray-500 hover:underline disabled:opacity-50"
+                  className="text-sm text-blue-600 hover:text-blue-500 disabled:opacity-50"
                 >
-                  ← Back
+                  Resend Code
                 </button>
               </div>
-            )}
-
-            {/* Progress indicator */}
-            <div className="flex justify-center mt-6">
-              <div className="flex space-x-2">
-                {[1, 2, 3].map((stepNumber) => (
-                  <div
-                    key={stepNumber}
-                    className={`w-3 h-3 rounded-full ${
-                      stepNumber === step
-                        ? 'bg-blue-600'
-                        : stepNumber < step
-                        ? 'bg-green-500'
-                        : 'bg-gray-300'
-                    }`}
-                  />
-                ))}
-              </div>
             </div>
+          )}
+
+          {/* STEP 3 — NEW PASSWORD */}
+          {step === 3 && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <FiLock className="inline w-4 h-4 mr-2" />
+                  New Password <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    {...register("newPassword", {
+                      required: "New password is required",
+                      minLength: {
+                        value: 6,
+                        message: "Password must be at least 6 characters"
+                      }
+                    })}
+                    className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    placeholder="Enter new password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute inset-y-0 right-0 flex items-center pr-3"
+                  >
+                    {showPassword ? (
+                      <FiEyeOff className="w-4 h-4 text-gray-400" />
+                    ) : (
+                      <FiEye className="w-4 h-4 text-gray-400" />
+                    )}
+                  </button>
+                </div>
+                {errors.newPassword && (
+                  <p className="mt-1 text-sm text-red-600">{errors.newPassword.message}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <FiLock className="inline w-4 h-4 mr-2" />
+                  Confirm Password <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <input
+                    type={showConfirmPassword ? "text" : "password"}
+                    {...register("confirmPassword", {
+                      required: "Please confirm your password",
+                      validate: (value) =>
+                        value === watchedPassword || "Passwords do not match"
+                    })}
+                    className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    placeholder="Confirm new password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute inset-y-0 right-0 flex items-center pr-3"
+                  >
+                    {showConfirmPassword ? (
+                      <FiEyeOff className="w-4 h-4 text-gray-400" />
+                    ) : (
+                      <FiEye className="w-4 h-4 text-gray-400" />
+                    )}
+                  </button>
+                </div>
+                {errors.confirmPassword && (
+                  <p className="mt-1 text-sm text-red-600">{errors.confirmPassword.message}</p>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* NAVIGATION BUTTONS */}
+          <div className="flex gap-3">
+            {step > 1 && (
+              <button
+                type="button"
+                onClick={handleBack}
+                disabled={loading}
+                className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 disabled:opacity-50 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-600"
+              >
+                Back
+              </button>
+            )}
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+            >
+              {loading ? (
+                <div className="flex items-center justify-center">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                  Processing...
+                </div>
+              ) : (
+                <>
+                  {step === 1 && "Verify & Send Code"}
+                  {step === 2 && "Verify Code"}
+                  {step === 3 && "Reset Password"}
+                </>
+              )}
+            </button>
           </div>
         </form>
+
+        {/* STEP INDICATOR */}
+        <div className="flex justify-center mt-8">
+          <div className="flex space-x-2">
+            {[1, 2, 3].map((stepNumber) => (
+              <div
+                key={stepNumber}
+                className={`w-2 h-2 rounded-full ${
+                  stepNumber === step
+                    ? "bg-blue-600"
+                    : stepNumber < step
+                    ? "bg-green-500"
+                    : "bg-gray-300"
+                }`}
+              />
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );

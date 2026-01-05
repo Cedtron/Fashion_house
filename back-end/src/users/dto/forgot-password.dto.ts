@@ -6,6 +6,11 @@ export class ForgotPasswordDto {
   @IsEmail()
   @IsNotEmpty()
   email: string;
+
+  @ApiProperty({ example: 'Your password hint answer' })
+  @IsString()
+  @IsNotEmpty()
+  passwordHint: string;
 }
 
 export class VerifyResetCodeDto {

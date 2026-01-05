@@ -151,34 +151,12 @@ async deactivate(@Param('id', ParseIntPipe) id: number, @Request() req) {
   return this.usersService.update(id, { isActive: false }, userId);
 }
 
-  // =============== FORGOT PASSWORD ENDPOINTS ===============
+  // =============== FORGOT PASSWORD ENDPOINTS (PUBLIC) ===============
 
   @Post('forgot-password')
-  @ApiOperation({ summary: 'Request password reset' })
-  @ApiResponse({ status: 200, description: 'Reset code sent if email exists' })
-  async forgotPassword(@Body() forgotPasswordDto: ForgotPasswordDto) {
-    return this.usersService.forgotPassword(forgotPasswordDto);
-  }
-
-  @Post('verify-reset-code')
-  @ApiOperation({ summary: 'Verify password reset code' })
-  @ApiResponse({ status: 200, description: 'Code verified successfully' })
-  @ApiResponse({ status: 400, description: 'Invalid or expired code' })
-  async verifyResetCode(@Body() verifyResetCodeDto: VerifyResetCodeDto) {
-    return this.usersService.verifyResetCode(verifyResetCodeDto);
-  }
-
-  @Post('reset-password')
-  @ApiOperation({ summary: 'Reset password with verified code' })
-  @ApiResponse({ status: 200, description: 'Password reset successfully' })
-  @ApiResponse({ status: 400, description: 'Invalid or expired code' })
-  async resetPassword(@Body() resetPasswordDto: ResetPasswordDto) {
-    return this.usersService.resetPassword(resetPasswordDto);
-  }
-
-  @Post('forgot-password')
-  @ApiOperation({ summary: 'Request password reset code' })
-  @ApiResponse({ status: 200, description: 'Reset code sent if email exists' })
+  @ApiOperation({ summary: 'Request password reset with email and password hint' })
+  @ApiResponse({ status: 200, description: 'Email and password hint verified, reset code sent' })
+  @ApiResponse({ status: 400, description: 'Invalid email or password hint' })
   async forgotPassword(@Body() forgotPasswordDto: ForgotPasswordDto) {
     return this.usersService.forgotPassword(forgotPasswordDto);
   }
