@@ -1,13 +1,10 @@
 import { Injectable, NestInterceptor, ExecutionContext, CallHandler } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
-import { LogsService } from '../../logs/logs.service';
 import { Request } from 'express';
 
 @Injectable()
 export class AuditLogInterceptor implements NestInterceptor {
-  constructor(private logsService: LogsService) {}
-
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
     const request = context.switchToHttp().getRequest<Request>();
     const response = context.switchToHttp().getResponse();
@@ -27,60 +24,19 @@ export class AuditLogInterceptor implements NestInterceptor {
       (request.headers['x-username'] as string) ||
       (request as any)?.user?.username ||
       request.body?.username ||
-      null;
+      'anonymous';
 
     const sanitizedBody = this.sanitizePayload(request.body);
-    const params = request.params;
-    const query = request.query;
 
     return next.handle().pipe(
       tap({
         next: (data) => {
-          this.logsService
-            .create({
-              level: 'info',
-              action: `${method} ${url}`,
-              message: 'Operation completed',
-              details: JSON.stringify({
-                params,
-                query,
-              }),
-              payload: sanitizedBody,
-              userId: username || undefined,
-              username: username || undefined,
-              method,
-              path: url,
-              statusCode: response?.statusCode ?? 200,
-              ipAddress: (request.ip || request.headers['x-forwarded-for']) as string,
-              userAgent: request.headers['user-agent'],
-            })
-            .catch(() => {
-              // ignore logging exceptions
-            });
+          // Simple console logging instead of database logging
+          console.log(`✅ [AUDIT] ${method} ${url} - Success - User: ${username}`);
         },
         error: (error) => {
-          this.logsService
-            .create({
-              level: 'error',
-              action: `${method} ${url}`,
-              message: error?.message || 'Operation failed',
-              details: JSON.stringify({
-                params,
-                query,
-                error: error?.message,
-              }),
-              payload: sanitizedBody,
-              userId: username || undefined,
-              username: username || undefined,
-              method,
-              path: url,
-              statusCode: response?.statusCode ?? 500,
-              ipAddress: (request.ip || request.headers['x-forwarded-for']) as string,
-              userAgent: request.headers['user-agent'],
-            })
-            .catch(() => {
-              // ignore logging exceptions
-            });
+          // Simple console logging for errors
+          console.log(`❌ [AUDIT] ${method} ${url} - Error: ${error?.message} - User: ${username}`);
         },
       }),
     );

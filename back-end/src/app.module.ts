@@ -6,7 +6,6 @@ import { SuppliersModule } from './suppliers/suppliers.module';
 import { CategoriesModule } from './categories/categories.module';
 import { SubCategoriesModule } from './subcategories/subcategories.module';
 import { AuthModule } from './auth/auth.module';
-import { LogsModule } from './logs/logs.module';
 import { SqlModule } from './sql/sql.module';
 import { StockModule } from './stock/stock.module';
 import { CommonModule } from './common/common.module';
@@ -31,7 +30,6 @@ import { RekognitionModule } from './rekognition/rekognition.module';
     CategoriesModule,
     SubCategoriesModule,
     AuthModule,
-    LogsModule,
     SqlModule,
     StockModule,
     ShadesModule,

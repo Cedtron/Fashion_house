@@ -5,14 +5,10 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuditService } from './services/audit.service';
 import { Log } from '../entities/log.entity';
 import { StockHistory } from '../entities/stock-history.entity';
-import { LogsModule } from '../logs/logs.module';
 import { AuditLogInterceptor } from './interceptors/audit-log.interceptor';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([Log, StockHistory]),
-    LogsModule,
-  ],
+  imports: [TypeOrmModule.forFeature([Log, StockHistory])],
   providers: [
     AuditService,
     {
