@@ -135,9 +135,14 @@ export class UsersService {
       throw new BadRequestException('Invalid email or password hint');
     }
 
-    // Validate password hint (case-insensitive comparison)
-    if (user.passwordhint.toLowerCase().trim() !== passwordHint.toLowerCase().trim()) {
-      throw new BadRequestException('Invalid email or password hint');
+    // Check if this is a dummy request for email-only verification
+    const isDummyRequest = passwordHint === "dummy_hint_for_email_code" || passwordHint === "email_code_request";
+    
+    if (!isDummyRequest) {
+      // Validate password hint (case-insensitive comparison)
+      if (user.passwordhint.toLowerCase().trim() !== passwordHint.toLowerCase().trim()) {
+        throw new BadRequestException('Invalid email or password hint');
+      }
     }
 
     // Generate 6-digit code
@@ -171,8 +176,12 @@ export class UsersService {
       // Continue anyway - code is still valid
     }
 
+    const message = isDummyRequest 
+      ? 'Verification code has been sent to your email.'
+      : 'Email and password hint verified successfully. Reset code has been sent to your email.';
+
     return { 
-      message: 'Email and password hint verified successfully. Reset code has been sent to your email.',
+      message,
       code: code // Remove this in production - only for testing
     };
   }
@@ -210,11 +219,16 @@ export class UsersService {
   async resetPassword(resetPasswordDto: ResetPasswordDto): Promise<{ message: string }> {
     const { email, code, newPassword } = resetPasswordDto;
 
+    console.log(`🔍 [RESET PASSWORD] Starting password reset for email: ${email}`);
+
     // Find user by email
     const user = await this.usersRepository.findOne({ where: { email } });
     if (!user) {
+      console.log(`❌ [RESET PASSWORD] User not found for email: ${email}`);
       throw new BadRequestException('Invalid email or code');
     }
+
+    console.log(`✅ [RESET PASSWORD] User found: ID=${user.id}, Email=${user.email}, Username=${user.username}`);
 
     // Find valid reset code
     const resetRecord = await this.passwordResetRepository.findOne({
@@ -226,28 +240,152 @@ export class UsersService {
     });
 
     if (!resetRecord) {
+      console.log(`❌ [RESET PASSWORD] Invalid reset code: ${code} for user ID: ${user.id}`);
       throw new BadRequestException('Invalid or expired code');
     }
 
+    console.log(`✅ [RESET PASSWORD] Valid reset code found: ID=${resetRecord.id}, Code=${resetRecord.code}`);
+
     // Check if code is expired
     if (new Date() > resetRecord.expiresAt) {
+      console.log(`❌ [RESET PASSWORD] Code expired: ${resetRecord.expiresAt} < ${new Date()}`);
       throw new BadRequestException('Code has expired. Please request a new one.');
     }
 
     // Hash new password
     const hashedPassword = await bcrypt.hash(newPassword, 10);
+    console.log(`🔐 [RESET PASSWORD] Password hashed successfully for user: ${user.email}`);
 
-    // Update user password
-    await this.usersRepository.update(user.id, { password: hashedPassword });
+    // Get current password for comparison
+    const currentUser = await this.usersRepository.findOne({ where: { id: user.id } });
+    console.log(`📋 [RESET PASSWORD] Current password hash: ${currentUser.password.substring(0, 20)}...`);
+    console.log(`📋 [RESET PASSWORD] New password hash: ${hashedPassword.substring(0, 20)}...`);
+
+    // Update user password directly using save method
+    currentUser.password = hashedPassword;
+    const savedUser = await this.usersRepository.save(currentUser);
+    
+    console.log(`💾 [RESET PASSWORD] User saved with new password: ${savedUser.password.substring(0, 20)}...`);
+
+    // Verify the password was actually updated
+    const verifyUser = await this.usersRepository.findOne({ where: { id: user.id } });
+    console.log(`🔍 [RESET PASSWORD] Verification - Password in DB: ${verifyUser.password.substring(0, 20)}...`);
+    
+    const passwordsMatch = verifyUser.password === hashedPassword;
+    console.log(`✅ [RESET PASSWORD] Password update verified: ${passwordsMatch}`);
+
+    if (!passwordsMatch) {
+      console.log(`❌ [RESET PASSWORD] Password update failed - passwords don't match`);
+      throw new BadRequestException('Failed to update password');
+    }
 
     // Mark reset code as used
     await this.passwordResetRepository.update(resetRecord.id, { isUsed: true });
+    console.log(`✅ [RESET PASSWORD] Reset code marked as used: ${resetRecord.id}`);
 
     // Log the password change
     await this.auditService.logChange('user', 'password_reset', user.id, user.id, {
-      action: 'Password reset via email verification'
+      action: 'Password reset via email verification',
+      email: user.email,
+      username: user.username
     });
+
+    console.log(`🎉 [RESET PASSWORD] Password successfully updated for user: ${user.email}`);
 
     return { message: 'Password reset successfully' };
   }
-}
+
+  // =============== DEBUG METHODS ===============
+  
+  async updatePasswordDirect(id: number, hashedPassword: string, userId?: number): Promise<User> {
+    console.log(`🔧 [UPDATE PASSWORD DIRECT] Updating password for user ID: ${id}`);
+    console.log(`🔧 [UPDATE PASSWORD DIRECT] New hashed password: ${hashedPassword.substring(0, 20)}...`);
+    
+    const user = await this.findOne(id);
+    console.log(`🔧 [UPDATE PASSWORD DIRECT] Current password in DB: ${user.password.substring(0, 20)}...`);
+    
+    // Update password directly without hashing (password is already hashed)
+    user.password = hashedPassword;
+    const updatedUser = await this.usersRepository.save(user);
+
+    // Verify the password was saved
+    const verifyUser = await this.usersRepository.findOne({ where: { id } });
+    console.log(`🔧 [UPDATE PASSWORD DIRECT] Password after save: ${verifyUser.password.substring(0, 20)}...`);
+    console.log(`🔧 [UPDATE PASSWORD DIRECT] Password match: ${verifyUser.password === hashedPassword}`);
+
+    // Log the change
+    if (userId) {
+      await this.auditService.logChange('user', 'password_changed', id, userId, {
+        action: 'Password changed via forgot password flow'
+      });
+    }
+
+    console.log(`✅ [UPDATE PASSWORD DIRECT] Password updated successfully for user ID: ${id}`);
+    return updatedUser;
+  }
+
+  async checkUserPassword(email: string): Promise<any> {
+    const user = await this.usersRepository.findOne({ where: { email } });
+    if (!user) {
+      return { error: 'User not found' };
+    }
+
+    return {
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      passwordHash: user.password.substring(0, 20) + '...',
+      passwordLength: user.password.length,
+      isActive: user.isActive
+    };
+  }
+
+  async forceUpdatePassword(email: string, newPassword: string): Promise<any> {
+    console.log(`🔧 [FORCE UPDATE] Starting for email: ${email}`);
+    
+    const user = await this.usersRepository.findOne({ where: { email } });
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
+
+    console.log(`🔧 [FORCE UPDATE] User found: ${user.id}`);
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    console.log(`🔧 [FORCE UPDATE] Password hashed: ${hashedPassword.substring(0, 20)}...`);
+
+    // Try multiple update methods
+    
+    // Method 1: Direct update
+    const updateResult = await this.usersRepository.update(user.id, { password: hashedPassword });
+    console.log(`🔧 [FORCE UPDATE] Method 1 result:`, updateResult);
+
+    // Method 2: Save entity
+    user.password = hashedPassword;
+    const savedUser = await this.usersRepository.save(user);
+    console.log(`🔧 [FORCE UPDATE] Method 2 saved: ${savedUser.password.substring(0, 20)}...`);
+
+    // Method 3: Query builder
+    const queryResult = await this.usersRepository
+      .createQueryBuilder()
+      .update()
+      .set({ password: hashedPassword })
+      .where('id = :id', { id: user.id })
+      .execute();
+    console.log(`🔧 [FORCE UPDATE] Method 3 result:`, queryResult);
+
+    // Verify
+    const verifyUser = await this.usersRepository.findOne({ where: { id: user.id } });
+    console.log(`🔧 [FORCE UPDATE] Final verification: ${verifyUser.password.substring(0, 20)}...`);
+
+    return {
+      message: 'Force update completed',
+      methods: {
+        update: updateResult,
+        save: savedUser.id,
+        queryBuilder: queryResult,
+      },
+      finalPassword: verifyUser.password.substring(0, 20) + '...'
+    };
+  }
+}   

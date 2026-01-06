@@ -2,22 +2,28 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { useForm } from "react-hook-form";
 import { toast } from "react-toastify";
-import { FiChevronLeft, FiEye, FiEyeOff, FiMail, FiLock, FiKey } from "react-icons/fi";
+import { FiChevronLeft, FiEye, FiEyeOff, FiMail, FiLock, FiKey, FiCheck } from "react-icons/fi";
 import api from "../../utils/axios";
 
-interface ForgotPasswordFormData {
+interface StepFormData {
   email: string;
   passwordHint: string;
-  code: string;
   newPassword: string;
   confirmPassword: string;
 }
 
+type Step = "email" | "passwordHint" | "newPassword";
+
 export default function ForgotPasswordForm() {
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState<Step>("email");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  
+  // Cached data from previous steps
+  const [verifiedEmail, setVerifiedEmail] = useState("");
+  const [verifiedPasswordHint, setVerifiedPasswordHint] = useState("");
+  
   const navigate = useNavigate();
 
   const {
@@ -25,94 +31,121 @@ export default function ForgotPasswordForm() {
     handleSubmit,
     watch,
     formState: { errors },
-    getValues,
-    reset
-  } = useForm<ForgotPasswordFormData>();
+    reset,
+  } = useForm<StepFormData>();
 
   const watchedPassword = watch("newPassword");
 
-  const onSubmit = async (data: ForgotPasswordFormData) => {
+  // Step 1: Verify email exists
+  const verifyEmail = async (data: StepFormData) => {
     setLoading(true);
-
     try {
-      if (step === 1) {
-        // Step 1: Request reset code with email and password hint validation
-        await api.post('/users/forgot-password', {
-          email: data.email,
-          passwordHint: data.passwordHint
-        });
+      console.log('📧 Step 1: Verifying email:', data.email);
+      
+      const response = await api.post('/users/verify-email', {
+        email: data.email
+      });
 
-        toast.success("Email and password hint verified! Reset code sent to your email!");
-        setStep(2);
+      console.log('✅ Email verification response:', response.data);
 
-      } else if (step === 2) {
-        // Step 2: Verify reset code
-        const response = await api.post('/users/verify-reset-code', {
-          email: data.email,
-          code: data.code
-        });
+      if (response.data.success) {
+        setVerifiedEmail(data.email);
+        setStep("passwordHint");
+        toast.success("Email verified! Now enter your password hint.");
+      }
+    } catch (error: any) {
+      console.error('❌ Email verification error:', error);
+      toast.error(error.response?.data?.message || "Email not found.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-        if (response.data.valid) {
-          toast.success("Code verified successfully!");
-          setStep(3);
-        }
+  // Step 2: Verify password hint
+  const verifyPasswordHint = async (data: StepFormData) => {
+    setLoading(true);
+    try {
+      console.log('🔑 Step 2: Verifying password hint for:', verifiedEmail);
+      
+      const response = await api.post('/users/verify-password-hint', {
+        email: verifiedEmail,
+        passwordHint: data.passwordHint
+      });
 
-      } else if (step === 3) {
-        // Step 3: Reset password
-        if (data.newPassword !== data.confirmPassword) {
-          toast.error("Passwords do not match");
-          return;
-        }
+      console.log('✅ Password hint verification response:', response.data);
 
-        await api.post('/users/reset-password', {
-          email: data.email,
-          code: data.code,
-          newPassword: data.newPassword
-        });
+      if (response.data.success) {
+        setVerifiedPasswordHint(data.passwordHint);
+        setStep("newPassword");
+        toast.success("Password hint verified! Now set your new password.");
+      }
+    } catch (error: any) {
+      console.error('❌ Password hint verification error:', error);
+      toast.error(error.response?.data?.message || "Invalid password hint.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-        toast.success("Password reset successfully!");
+  // Step 3: Change password
+  const changePassword = async (data: StepFormData) => {
+    if (data.newPassword !== data.confirmPassword) {
+      toast.error("Passwords do not match");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      console.log('🔄 Step 3: Changing password for:', verifiedEmail);
+      
+      const response = await api.post('/users/change-password-final', {
+        email: verifiedEmail,
+        passwordHint: verifiedPasswordHint,
+        newPassword: data.newPassword
+      });
+
+      console.log('✅ Password change response:', response.data);
+
+      if (response.data.success) {
+        toast.success("🎉 Password Changed Successfully! Redirecting...");
         
-        // Reset form and redirect to login
+        // Reset everything
         reset();
-        setStep(1);
+        setVerifiedEmail("");
+        setVerifiedPasswordHint("");
         
-        // Redirect to login after a short delay
+        // Redirect to signin page after 2 seconds
         setTimeout(() => {
           navigate('/signin');
         }, 2000);
       }
     } catch (error: any) {
-      console.error('Forgot password error:', error);
-      
-      if (error.response?.data?.message) {
-        toast.error(error.response.data.message);
-      } else {
-        toast.error("An error occurred. Please try again.");
-      }
+      console.error('❌ Password change error:', error);
+      toast.error(error.response?.data?.message || "Failed to change password.");
     } finally {
       setLoading(false);
     }
   };
 
+  // Submit handler for each step
+  const onSubmit = async (data: StepFormData) => {
+    if (step === "email") {
+      await verifyEmail(data);
+    } else if (step === "passwordHint") {
+      await verifyPasswordHint(data);
+    } else if (step === "newPassword") {
+      await changePassword(data);
+    }
+  };
+
+  // Handle back button
   const handleBack = () => {
-    if (step > 1) {
-      setStep(step - 1);
-    }
-  };
-
-  const handleResendCode = async () => {
-    const values = getValues();
-    setLoading(true);
-    try {
-      await api.post('/users/forgot-password', {
-        email: values.email,
-        passwordHint: values.passwordHint
-      });
-      toast.success("New code sent to your email!");
-    } catch (error: any) {
-      toast.error("Failed to resend code. Please try again.");
-    } finally {
-      setLoading(false);
+    if (step === "passwordHint") {
+      setStep("email");
+      setVerifiedEmail("");
+    } else if (step === "newPassword") {
+      setStep("passwordHint");
+      setVerifiedPasswordHint("");
     }
   };
 
@@ -121,7 +154,7 @@ export default function ForgotPasswordForm() {
       <div className="w-full max-w-md pt-10 mx-auto">
         <Link
           to="/signin"
-          className="inline-flex items-center text-sm text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+          className="inline-flex items-center text-sm text-gray-500 transition-colors hover:text-gray-700"
         >
           <FiChevronLeft className="w-5 h-5 mr-1" />
           Back to Sign In
@@ -130,24 +163,27 @@ export default function ForgotPasswordForm() {
 
       <div className="flex flex-col justify-center flex-1 w-full max-w-md mx-auto">
         <div className="mb-5 sm:mb-8 text-center">
-          <h1 className="mb-2 font-semibold text-gray-800 text-title-sm dark:text-white/90 sm:text-title-md">
-            Forgot Password
+          <h1 className="mb-2 font-semibold text-gray-800 text-title-sm sm:text-title-md">
+            Forgot Password - Step by Step
           </h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            {step === 1 && "Enter your email and password hint to reset your password."}
-            {step === 2 && "Check your email and enter the verification code below."}
-            {step === 3 && "Set your new password below."}
+          <p className="text-sm text-gray-500">
+            Current step: {step}
           </p>
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-          {/* STEP 1 — EMAIL & PASSWORD HINT */}
-          {step === 1 && (
-            <>
+          {/* STEP 1 — EMAIL */}
+          {step === "email" && (
+            <div className="space-y-4">
+              <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
+                <h3 className="text-sm font-medium text-blue-800">Step 1: Verify Email</h3>
+                <p className="mt-1 text-sm text-blue-700">Enter your registered email address</p>
+              </div>
+
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
                   <FiMail className="inline w-4 h-4 mr-2" />
-                  Email <span className="text-red-500">*</span>
+                  Email Address <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="email"
@@ -158,16 +194,34 @@ export default function ForgotPasswordForm() {
                       message: "Invalid email address"
                     }
                   })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   placeholder="Enter your registered email"
                 />
                 {errors.email && (
                   <p className="mt-1 text-sm text-red-600">{errors.email.message}</p>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* STEP 2 — PASSWORD HINT */}
+          {step === "passwordHint" && (
+            <div className="space-y-4">
+              <div className="flex items-center p-3 bg-green-50 rounded-lg border border-green-200">
+                <FiCheck className="w-5 h-5 text-green-600 mr-3" />
+                <div>
+                  <p className="text-sm font-medium text-green-800">Email Verified</p>
+                  <p className="text-xs text-green-700">{verifiedEmail}</p>
+                </div>
+              </div>
+
+              <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
+                <h3 className="text-sm font-medium text-blue-800">Step 2: Verify Password Hint</h3>
+                <p className="mt-1 text-sm text-blue-700">Answer your security question</p>
+              </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
                   <FiKey className="inline w-4 h-4 mr-2" />
                   Password Hint Answer <span className="text-red-500">*</span>
                 </label>
@@ -180,63 +234,35 @@ export default function ForgotPasswordForm() {
                       message: "Password hint answer must be at least 2 characters"
                     }
                   })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   placeholder="Enter your password hint answer"
                 />
                 {errors.passwordHint && (
                   <p className="mt-1 text-sm text-red-600">{errors.passwordHint.message}</p>
                 )}
-                <p className="mt-2 text-sm text-gray-500">
-                  Enter the answer to your password hint question for verification.
-                </p>
-              </div>
-            </>
-          )}
-
-          {/* STEP 2 — VERIFICATION CODE */}
-          {step === 2 && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                <FiKey className="inline w-4 h-4 mr-2" />
-                Verification Code <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                {...register("code", {
-                  required: "Verification code is required",
-                  pattern: {
-                    value: /^\d{6}$/,
-                    message: "Code must be 6 digits"
-                  }
-                })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white text-center text-lg tracking-widest"
-                placeholder="000000"
-                maxLength={6}
-              />
-              {errors.code && (
-                <p className="mt-1 text-sm text-red-600">{errors.code.message}</p>
-              )}
-              <div className="mt-2 flex items-center justify-between">
-                <p className="text-sm text-gray-500">
-                  Code sent to {getValues("email")}
-                </p>
-                <button
-                  type="button"
-                  onClick={handleResendCode}
-                  disabled={loading}
-                  className="text-sm text-blue-600 hover:text-blue-500 disabled:opacity-50"
-                >
-                  Resend Code
-                </button>
               </div>
             </div>
           )}
 
           {/* STEP 3 — NEW PASSWORD */}
-          {step === 3 && (
-            <>
+          {step === "newPassword" && (
+            <div className="space-y-4">
+              <div className="flex items-center p-3 bg-green-50 rounded-lg border border-green-200">
+                <FiCheck className="w-5 h-5 text-green-600 mr-3" />
+                <div>
+                  <p className="text-sm font-medium text-green-800">Identity Verified</p>
+                  <p className="text-xs text-green-700">Email: {verifiedEmail}</p>
+                  <p className="text-xs text-green-700">Password hint verified ✓</p>
+                </div>
+              </div>
+
+              <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
+                <h3 className="text-sm font-medium text-blue-800">Step 3: Set New Password</h3>
+                <p className="mt-1 text-sm text-blue-700">Enter and confirm your new password</p>
+              </div>
+
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
                   <FiLock className="inline w-4 h-4 mr-2" />
                   New Password <span className="text-red-500">*</span>
                 </label>
@@ -250,7 +276,7 @@ export default function ForgotPasswordForm() {
                         message: "Password must be at least 6 characters"
                       }
                     })}
-                    className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     placeholder="Enter new password"
                   />
                   <button
@@ -271,7 +297,7 @@ export default function ForgotPasswordForm() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
                   <FiLock className="inline w-4 h-4 mr-2" />
                   Confirm Password <span className="text-red-500">*</span>
                 </label>
@@ -283,7 +309,7 @@ export default function ForgotPasswordForm() {
                       validate: (value) =>
                         value === watchedPassword || "Passwords do not match"
                     })}
-                    className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     placeholder="Confirm new password"
                   />
                   <button
@@ -302,17 +328,17 @@ export default function ForgotPasswordForm() {
                   <p className="mt-1 text-sm text-red-600">{errors.confirmPassword.message}</p>
                 )}
               </div>
-            </>
+            </div>
           )}
 
           {/* NAVIGATION BUTTONS */}
-          <div className="flex gap-3">
-            {step > 1 && (
+          <div className="flex gap-3 pt-2">
+            {step !== "email" && (
               <button
                 type="button"
                 onClick={handleBack}
                 disabled={loading}
-                className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 disabled:opacity-50 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-600"
+                className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 disabled:opacity-50"
               >
                 Back
               </button>
@@ -320,7 +346,11 @@ export default function ForgotPasswordForm() {
             <button
               type="submit"
               disabled={loading}
-              className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+              className={`flex-1 px-4 py-2 text-sm font-medium text-white rounded-md focus:outline-none focus:ring-2 ${
+                step === "newPassword" 
+                  ? "bg-green-600 hover:bg-green-700 focus:ring-green-500" 
+                  : "bg-blue-600 hover:bg-blue-700 focus:ring-blue-500"
+              } disabled:opacity-50`}
             >
               {loading ? (
                 <div className="flex items-center justify-center">
@@ -329,32 +359,14 @@ export default function ForgotPasswordForm() {
                 </div>
               ) : (
                 <>
-                  {step === 1 && "Verify & Send Code"}
-                  {step === 2 && "Verify Code"}
-                  {step === 3 && "Reset Password"}
+                  {step === "email" && "Verify Email"}
+                  {step === "passwordHint" && "Verify Hint"}
+                  {step === "newPassword" && "Change Password"}
                 </>
               )}
             </button>
           </div>
         </form>
-
-        {/* STEP INDICATOR */}
-        <div className="flex justify-center mt-8">
-          <div className="flex space-x-2">
-            {[1, 2, 3].map((stepNumber) => (
-              <div
-                key={stepNumber}
-                className={`w-2 h-2 rounded-full ${
-                  stepNumber === step
-                    ? "bg-blue-600"
-                    : stepNumber < step
-                    ? "bg-green-500"
-                    : "bg-gray-300"
-                }`}
-              />
-            ))}
-          </div>
-        </div>
       </div>
     </div>
   );

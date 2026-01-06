@@ -32,10 +32,29 @@ export default function Settings() {
   const backupData = () => toast.success("Backup created successfully ✅");
   const restoreData = () => toast.success("Restore completed successfully ✅");
 
-  const changePassword = (data: any) => {
+  const changePassword = async (data: any) => {
     if (data.password !== data.confirm) return toast.error("Passwords do not match ❌");
-    toast.success("Password changed successfully ✅");
-    resetPass();
+    
+    try {
+      // Get current user ID from localStorage or context
+      const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+      if (!currentUser.id) {
+        toast.error("User not found. Please login again.");
+        return;
+      }
+
+      console.log('🔄 Changing password for current user:', currentUser.id);
+      
+      await api.patch(`/users/${currentUser.id}`, {
+        password: data.password
+      });
+      
+      toast.success("Password changed successfully ✅");
+      resetPass();
+    } catch (error: any) {
+      console.error('❌ Password change error:', error);
+      toast.error(error.response?.data?.message || "Failed to change password ❌");
+    }
   };
 
   const fetchActivityLogs = async () => {

@@ -9,6 +9,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { ForgotPasswordDto, VerifyResetCodeDto, ResetPasswordDto } from './dto/forgot-password.dto';
 import { User } from '../entities/user.entity';
 import { existsSync, mkdirSync, unlinkSync } from 'fs';
+import * as bcrypt from 'bcrypt';
 
 @ApiTags('users')
 @ApiBearerAuth('JWT-auth')
@@ -170,10 +171,175 @@ async deactivate(@Param('id', ParseIntPipe) id: number, @Request() req) {
   }
 
   @Post('reset-password')
-  @ApiOperation({ summary: 'Reset password with verified code' })
+  @ApiOperation({ summary: 'Reset password with or without verification code' })
   @ApiResponse({ status: 200, description: 'Password reset successfully' })
-  @ApiResponse({ status: 400, description: 'Invalid or expired code' })
+  @ApiResponse({ status: 400, description: 'Invalid email or expired code' })
   async resetPassword(@Body() resetPasswordDto: ResetPasswordDto) {
     return this.usersService.resetPassword(resetPasswordDto);
+  }
+
+  // =============== DEBUG ENDPOINTS ===============
+
+  @Post('test-password-update')
+  @ApiOperation({ summary: 'Test password update (DEBUG ONLY)' })
+  async testPasswordUpdate(@Body() body: { email: string; newPassword: string }) {
+    const { email, newPassword } = body;
+    
+    // Find user
+    const user = await this.usersService.findByEmail(email);
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
+
+    // Hash new password using the same method as the rest of the system
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    
+    console.log(`🧪 [TEST] Updating password for user: ${email}`);
+    console.log(`🧪 [TEST] New hash: ${hashedPassword.substring(0, 20)}...`);
+
+    // Update using the direct password update method
+    const updatedUser = await this.usersService.updatePasswordDirect(user.id, hashedPassword, user.id);
+    
+    return {
+      message: 'Password updated successfully (TEST)',
+      userId: user.id,
+      email: user.email,
+      passwordUpdated: true
+    };
+  }
+
+  @Post('debug-user-password')
+  @ApiOperation({ summary: 'Complete password debug (DEBUG)' })
+  async debugUserPassword(@Body() body: { email: string; testPassword?: string }) {
+    const { email, testPassword } = body;
+    
+    console.log(`🔍 [DEBUG] Full password debug for: ${email}`);
+    
+    const user = await this.usersService.findByEmail(email);
+    if (!user) {
+      return { error: 'User not found', email };
+    }
+
+    const result = {
+      email: user.email,
+      username: user.username,
+      userId: user.id,
+      isActive: user.isActive,
+      passwordHash: user.password,
+      passwordHashLength: user.password.length,
+      passwordHashPreview: user.password.substring(0, 30) + '...',
+      passwordHint: user.passwordhint,
+      testResults: {}
+    };
+
+    // Test password if provided
+    if (testPassword) {
+      console.log(`🧪 [DEBUG] Testing password: "${testPassword}"`);
+      
+      try {
+        const isMatch = await bcrypt.compare(testPassword, user.password);
+        result.testResults = {
+          testPassword: testPassword,
+          passwordMatch: isMatch,
+          message: isMatch ? 'Password is CORRECT' : 'Password is INCORRECT'
+        };
+        console.log(`🧪 [DEBUG] Password test result: ${isMatch}`);
+      } catch (error) {
+        result.testResults = {
+          testPassword: testPassword,
+          error: error.message,
+          message: 'Error during password comparison'
+        };
+        console.log(`❌ [DEBUG] Password test error:`, error);
+      }
+    }
+
+    return result;
+  }
+
+  // =============== SEPARATE STEP APIs ===============
+
+  @Post('verify-email')
+  @ApiOperation({ summary: 'Step 1: Verify email exists' })
+  async verifyEmail(@Body() body: { email: string }) {
+    const { email } = body;
+    
+    console.log(`📧 [VERIFY EMAIL] Checking email: ${email}`);
+    
+    const user = await this.usersService.findByEmail(email);
+    if (!user) {
+      throw new BadRequestException('Email not found');
+    }
+
+    console.log(`✅ [VERIFY EMAIL] Email found: ${email}`);
+    
+    return {
+      message: 'Email verified successfully',
+      email: email,
+      success: true
+    };
+  }
+
+  @Post('verify-password-hint')
+  @ApiOperation({ summary: 'Step 2: Verify password hint' })
+  async verifyPasswordHint(@Body() body: { email: string; passwordHint: string }) {
+    const { email, passwordHint } = body;
+    
+    console.log(`🔑 [VERIFY HINT] Checking password hint for: ${email}`);
+    
+    const user = await this.usersService.findByEmail(email);
+    if (!user) {
+      throw new BadRequestException('Email not found');
+    }
+
+    // Validate password hint (case-insensitive comparison)
+    if (user.passwordhint.toLowerCase().trim() !== passwordHint.toLowerCase().trim()) {
+      throw new BadRequestException('Invalid password hint');
+    }
+
+    console.log(`✅ [VERIFY HINT] Password hint verified for: ${email}`);
+    
+    return {
+      message: 'Password hint verified successfully',
+      email: email,
+      success: true
+    };
+  }
+
+  @Post('change-password-final')
+  @ApiOperation({ summary: 'Step 3: Change password after verification' })
+  async changePasswordFinal(@Body() body: { email: string; passwordHint: string; newPassword: string }) {
+    const { email, passwordHint, newPassword } = body;
+    
+    console.log(`🔄 [CHANGE PASSWORD] Starting for email: ${email}`);
+    
+    // Find user by email
+    const user = await this.usersService.findByEmail(email);
+    if (!user) {
+      throw new BadRequestException('Email not found');
+    }
+
+    // Double-check password hint again for security
+    if (user.passwordhint.toLowerCase().trim() !== passwordHint.toLowerCase().trim()) {
+      throw new BadRequestException('Invalid password hint');
+    }
+
+    console.log(`🔐 [CHANGE PASSWORD] Hashing new password for: ${email}`);
+
+    // Hash new password using the same method as the rest of the system
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    
+    console.log(`💾 [CHANGE PASSWORD] Updating user password in database for: ${email}`);
+
+    // Create a special method in service for direct password update to avoid double hashing
+    const updatedUser = await this.usersService.updatePasswordDirect(user.id, hashedPassword, user.id);
+    
+    console.log(`✅ [CHANGE PASSWORD] Password updated successfully for: ${email}`);
+
+    return {
+      message: 'Password changed successfully',
+      email: email,
+      success: true
+    };
   }
 }

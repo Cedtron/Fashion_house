@@ -111,7 +111,7 @@ export default function SignInForm() {
               onClick={() => setShowPassword(!showPassword)}
               className="absolute text-gray-500 right-3 top-9 hover:text-gray-700 transition"
             >
-              {showPassword ? <FaEyeSlash /> : <FaEye />}
+              {showPassword ?   <FaEye />:<FaEyeSlash />}
             </button>
           </div>
 
