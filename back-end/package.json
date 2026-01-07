@@ -5,10 +5,10 @@
   "author": "",
   "private": true,
   "license": "MIT",
-  "scripts": {
-    "build": "nest build",
-    "prebuild": "rm -rf dist",
-    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
+ "scripts": {
+  "build": "nest build",
+  "prebuild": "rm -rf dist",
+  "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
   "start": "nest start",
   "start:dev": "nest start",
   "start:debug": "nest start --debug",
@@ -16,13 +16,13 @@
   "setup-db": "node setup-database.js",
   "dev": "npm run start:dev",
   "setup-and-dev": "npm run setup-db && npm run start:dev",
-    "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
-    "test": "jest",
-    "test:watch": "jest --watch",
-    "test:cov": "jest --coverage",
-    "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
-  },
+  "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
+  "test": "jest",
+  "test:watch": "jest --watch",
+  "test:cov": "jest --coverage",
+  "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
+  "test:e2e": "jest --config ./test/jest-e2e.json"
+},
   "dependencies": {
     "@aws-sdk/client-rekognition": "^3.490.0",
     "@google-cloud/aiplatform": "^6.0.0",
@@ -42,7 +42,7 @@
     "bcrypt": "^5.1.1",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.2",
-    "fashion-house": "file:..",
+    
     "form-data": "^4.0.5",
     "image-hash": "^7.0.1",
     "jimp": "^0.16.13",
@@ -100,7 +100,5 @@
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"
   },
-  "overrides": {
-  "typescript": "5.4.5"
-}
+
 }
