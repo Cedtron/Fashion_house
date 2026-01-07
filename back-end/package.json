@@ -99,6 +99,6 @@
     ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"
-  },
+  }
 
 }
