@@ -21,7 +21,8 @@ COPY --link src ./src
 # COPY --link public ./public
 
 # Build the app (NestJS compiles TypeScript to dist/)
-RUN npm run build
+# Try nest build first, fallback to tsc if nest CLI fails
+RUN npm run build || npm run build:fallback || npx tsc -p tsconfig.build.json
 
 # Remove dev dependencies and reinstall only production dependencies
 RUN --mount=type=cache,target=/root/.npm \
