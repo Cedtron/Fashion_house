@@ -15,8 +15,7 @@ interface StepFormData {
 type Step = 1 | 2 | 3;
 
 export default function ForgotPasswordForm() {
-  const [step, sunction ForgotPasswordForm() {
-  const [step, setStep] = useState<Step>("email");
+  const [step, setStep] = useState<Step>(1);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
