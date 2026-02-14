@@ -4,6 +4,7 @@ import { useForm } from "react-hook-form";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { FiEdit2, FiTrash2, FiEye, FiEyeOff, FiUpload, FiX, FiKey } from "react-icons/fi";
+import { getImageUrl } from "../utils/imageUtils";
 
 type User = {
   id: number;
@@ -511,10 +512,13 @@ export default function Users() {
                         }`}>
                         {user.imagePath ? (
                           <img
-                            
-                             src={user.imagePath.startsWith('http') ? user.imagePath : `${api.defaults.baseURL}${user.imagePath}`}
+                            src={getImageUrl(user.imagePath)}
                             alt={user.username}
                             className="object-cover w-10 h-10 rounded-full"
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                              e.currentTarget.parentElement?.classList.add(getAvatarColor(user.username));
+                            }}
                           />
                         ) : (
                           getUserInitial(user)
@@ -709,9 +713,13 @@ export default function Users() {
                   }`}>
                   {viewUser.imagePath ? (
                     <img
-                      src={viewUser.imagePath}
+                      src={getImageUrl(viewUser.imagePath)}
                       alt={viewUser.username}
                       className="object-cover w-16 h-16 rounded-full"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                        e.currentTarget.parentElement?.classList.add(getAvatarColor(viewUser.username));
+                      }}
                     />
                   ) : (
                     getUserInitial(viewUser)

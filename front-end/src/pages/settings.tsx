@@ -4,15 +4,17 @@ import PageMeta from "../components/common/PageMeta";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { useForm } from "react-hook-form";
-import { FiSun, FiMoon, FiSave, FiUpload, FiLock, FiActivity, FiRefreshCw } from "react-icons/fi";
+import { FiSun, FiMoon, FiSave, FiUpload, FiLock, FiActivity, FiRefreshCw, FiInfo } from "react-icons/fi";
 import { LuShoppingBag } from "react-icons/lu";
 import api from "../utils/axios";
 import PageLoader from "../components/common/PageLoader";
+import AuthDebug from "../components/debug/AuthDebug";
 export default function Settings() {
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [activityLogs, setActivityLogs] = useState<any[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
+  const [showAuthDebug, setShowAuthDebug] = useState(false);
 
   const { register, handleSubmit } = useForm<{ shopName: string; contact: string; email: string }>();
   const { register: passRegister, handleSubmit: handlePassSubmit, reset: resetPass } = useForm<{ password: string; confirm: string }>();
@@ -119,6 +121,21 @@ export default function Settings() {
           <button onClick={restoreData} className="btn btn-yellow flex items-center gap-2"><FiUpload /> Restore</button>
         </div>
 
+        {/* Developer Tools */}
+        <div className="bg-white dark:bg-white/[0.03] border border-gray-200 dark:border-gray-800 rounded-2xl p-6 xl:p-8 shadow-sm">
+          <h3 className="mb-5 flex items-center gap-2 text-lg font-semibold text-gray-800 dark:text-white/90">
+            <FiInfo /> Developer Tools
+          </h3>
+          <div className="flex gap-4">
+            <button 
+              onClick={() => setShowAuthDebug(true)}
+              className="btn btn-blue flex items-center gap-2"
+            >
+              <FiInfo /> View Auth Debug Info
+            </button>
+          </div>
+        </div>
+
         {/* Change Password */}
         <div className="bg-white dark:bg-white/[0.03] border border-gray-200 dark:border-gray-800 rounded-2xl p-6 xl:p-8 shadow-sm">
           <h3 className="mb-5 flex items-center gap-2 text-lg font-semibold text-gray-800 dark:text-white/90">
@@ -199,6 +216,24 @@ export default function Settings() {
           )}
         </div>
       </div>
+
+      {/* Auth Debug Modal */}
+      {showAuthDebug && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-2xl max-h-96 overflow-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold">Authentication Debug Information</h3>
+              <button 
+                onClick={() => setShowAuthDebug(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ✕
+              </button>
+            </div>
+            <AuthDebug />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

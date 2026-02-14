@@ -32,7 +32,7 @@ import NotificationsPage from "./pages/Notifications";
 
 export default function App() {
   return (
-    <Router basename="/fashionhouse">
+    <Router>
       <ScrollToTop />
 
       <Routes>

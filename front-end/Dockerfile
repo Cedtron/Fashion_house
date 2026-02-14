@@ -18,7 +18,7 @@ COPY --link . .
 
 # Build the production-ready static files
 RUN --mount=type=cache,target=/root/.npm \
-    npm run build
+    npm run build:prod
 
 # Production stage - Use nginx for serving static files
 FROM nginx:alpine AS final

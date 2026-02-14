@@ -305,7 +305,10 @@ async deactivate(@Param('id', ParseIntPipe) id: number, @Request() req) {
       success: true
     };
   }
-
+@Post('reset-password-direct')
+async directResetPassword(@Body() body: { email: string; newPassword: string }) {
+  return this.usersService.directResetPassword(body.email, body.newPassword);
+}
   @Post('change-password-final')
   @ApiOperation({ summary: 'Step 3: Change password after verification' })
   async changePasswordFinal(@Body() body: { email: string; passwordHint: string; newPassword: string }) {

@@ -1,8 +1,7 @@
 
 import axios from 'axios';
 import Cookies from 'js-cookie';
-
-export const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000').replace(/\/+$/, '');
+import { API_URL } from './environment';
 
 const api = axios.create({
   baseURL: API_URL, // backend URL from env or default
@@ -54,3 +53,4 @@ api.interceptors.response.use(
 );
 
 export default api;
+export { API_URL };

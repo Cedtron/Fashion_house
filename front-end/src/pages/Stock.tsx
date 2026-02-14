@@ -6,6 +6,7 @@ import PageBreadcrumb from "../components/common/PageBreadCrumb";
 import PageMeta from "../components/common/PageMeta";
 import api from '../utils/axios';
 import Cookies from "js-cookie";
+import { getImageUrl } from '../utils/imageUtils';
 
 interface Category {
   id: number;
@@ -486,7 +487,7 @@ export default function StockPage() {
 
           // update preview if available
           if (uploadRes.data?.imagePath) {
-            setPreview(uploadRes.data.imagePath.startsWith('http') ? uploadRes.data.imagePath : `${api.defaults.baseURL}${uploadRes.data.imagePath}`);
+            setPreview(getImageUrl(uploadRes.data.imagePath));
           }
 
           toast.success('Image uploaded successfully!');
@@ -624,7 +625,7 @@ export default function StockPage() {
         setValue("subcategoryId", matchingSubcategory.id);
       }
       
-      setPreview(item.imagePath ? `${api.defaults.baseURL}${item.imagePath}` : null);
+      setPreview(getImageUrl(item.imagePath));
     } else {
       reset();
       setPreview(null);
@@ -731,9 +732,13 @@ export default function StockPage() {
                         <span className="font-medium">{item.product}</span>
                         {item.imagePath && (
                           <img
-                            src={item.imagePath.startsWith('http') ? item.imagePath : `${api.defaults.baseURL}${item.imagePath}`}
+                            src={getImageUrl(item.imagePath)}
                             alt={item.product}
                             className="object-cover w-8 h-8 mt-1 rounded"
+                            onError={(e) => {
+                              console.error('Failed to load stock image:', getImageUrl(item.imagePath));
+                              e.currentTarget.style.display = 'none';
+                            }}
                           />
                         )}
                       </div>
@@ -1250,9 +1255,13 @@ export default function StockPage() {
                 {selectedStock.imagePath && (
                   <div className="flex justify-center">
                     <img
-                      src={selectedStock.imagePath.startsWith('http') ? selectedStock.imagePath : `${api.defaults.baseURL}${selectedStock.imagePath}`}
+                      src={getImageUrl(selectedStock.imagePath)}
                       alt={selectedStock.product}
                       className="object-cover w-32 h-32 border rounded-md"
+                      onError={(e) => {
+                        console.error('Failed to load stock image:', getImageUrl(selectedStock.imagePath));
+                        e.currentTarget.style.display = 'none';
+                      }}
                     />
                   </div>
                 )}
@@ -1443,9 +1452,13 @@ export default function StockPage() {
                           <div className="flex gap-3">
                             {result.imagePath && (
                               <img
-                                src={result.imagePath.startsWith('http') ? result.imagePath : `${api.defaults.baseURL}${result.imagePath}`}
+                                src={getImageUrl(result.imagePath)}
                                 alt={result.product}
                                 className="object-cover w-20 h-20 rounded"
+                                onError={(e) => {
+                                  console.error('Failed to load stock image:', getImageUrl(result.imagePath));
+                                  e.currentTarget.style.display = 'none';
+                                }}
                               />
                             )}
                             <div className="flex-1">

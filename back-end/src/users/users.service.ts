@@ -42,7 +42,7 @@ export class UsersService {
       }
     }
 
-    // Hash password
+    // Hash password using bcrypt with 10 salt rounds
     const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
 
     const user = this.usersRepository.create({
@@ -101,9 +101,10 @@ export class UsersService {
       }
     });
 
-    // Password hashing
+    // Hash password if provided (using same bcrypt method as create)
     if (updateUserDto.password) {
       updateUserDto.password = await bcrypt.hash(updateUserDto.password, 10);
+      changes['password'] = { action: 'Password updated' };
     }
 
     Object.assign(user, updateUserDto);
@@ -132,13 +133,14 @@ export class UsersService {
     // Find user by email
     const user = await this.usersRepository.findOne({ where: { email } });
     if (!user) {
-      throw new BadRequestException('Invalid email or password hint');
+      // Don't reveal if user exists or not for security
+      throw new BadRequestException('If your email exists in our system, you will receive a reset code.');
     }
 
     // Check if this is a dummy request for email-only verification
     const isDummyRequest = passwordHint === "dummy_hint_for_email_code" || passwordHint === "email_code_request";
     
-    if (!isDummyRequest) {
+    if (!isDummyRequest && user.passwordhint) {
       // Validate password hint (case-insensitive comparison)
       if (user.passwordhint.toLowerCase().trim() !== passwordHint.toLowerCase().trim()) {
         throw new BadRequestException('Invalid email or password hint');
@@ -168,25 +170,31 @@ export class UsersService {
 
     await this.passwordResetRepository.save(passwordReset);
 
-    // Send email with reset code (if email service is available)
+    // Send email with reset code
     try {
       await this.emailService.sendPasswordResetEmail(email, code, user.username);
     } catch (error) {
       console.error('Failed to send reset email:', error);
-      // Continue anyway - code is still valid
+      // Still return success but log the error
     }
 
     const message = isDummyRequest 
       ? 'Verification code has been sent to your email.'
       : 'Email and password hint verified successfully. Reset code has been sent to your email.';
 
-    return { 
-      message,
-      code: code // Remove this in production - only for testing
-    };
+    // IMPORTANT: Remove the code from production response - only for testing
+    // In production, return only the message
+    const response = { message };
+    
+    // For testing/debugging only - include code
+    if (process.env.NODE_ENV !== 'production') {
+      response['code'] = code;
+    }
+
+    return response;
   }
 
-  async verifyResetCode(verifyResetCodeDto: VerifyResetCodeDto): Promise<{ message: string; valid: boolean }> {
+  async verifyResetCode(verifyResetCodeDto: VerifyResetCodeDto): Promise<{ message: string; valid: boolean; resetId?: number }> {
     const { email, code } = verifyResetCodeDto;
 
     // Find user by email
@@ -213,22 +221,21 @@ export class UsersService {
       throw new BadRequestException('Code has expired. Please request a new one.');
     }
 
-    return { message: 'Code verified successfully', valid: true };
+    return { 
+      message: 'Code verified successfully', 
+      valid: true,
+      resetId: resetRecord.id // Return reset ID for use in resetPassword
+    };
   }
 
   async resetPassword(resetPasswordDto: ResetPasswordDto): Promise<{ message: string }> {
     const { email, code, newPassword } = resetPasswordDto;
 
-    console.log(`🔍 [RESET PASSWORD] Starting password reset for email: ${email}`);
-
     // Find user by email
     const user = await this.usersRepository.findOne({ where: { email } });
     if (!user) {
-      console.log(`❌ [RESET PASSWORD] User not found for email: ${email}`);
       throw new BadRequestException('Invalid email or code');
     }
-
-    console.log(`✅ [RESET PASSWORD] User found: ID=${user.id}, Email=${user.email}, Username=${user.username}`);
 
     // Find valid reset code
     const resetRecord = await this.passwordResetRepository.findOne({
@@ -240,89 +247,139 @@ export class UsersService {
     });
 
     if (!resetRecord) {
-      console.log(`❌ [RESET PASSWORD] Invalid reset code: ${code} for user ID: ${user.id}`);
       throw new BadRequestException('Invalid or expired code');
     }
 
-    console.log(`✅ [RESET PASSWORD] Valid reset code found: ID=${resetRecord.id}, Code=${resetRecord.code}`);
-
     // Check if code is expired
     if (new Date() > resetRecord.expiresAt) {
-      console.log(`❌ [RESET PASSWORD] Code expired: ${resetRecord.expiresAt} < ${new Date()}`);
       throw new BadRequestException('Code has expired. Please request a new one.');
     }
 
-    // Hash new password
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-    console.log(`🔐 [RESET PASSWORD] Password hashed successfully for user: ${user.email}`);
-
-    // Get current password for comparison
-    const currentUser = await this.usersRepository.findOne({ where: { id: user.id } });
-    console.log(`📋 [RESET PASSWORD] Current password hash: ${currentUser.password.substring(0, 20)}...`);
-    console.log(`📋 [RESET PASSWORD] New password hash: ${hashedPassword.substring(0, 20)}...`);
-
-    // Update user password directly using save method
-    currentUser.password = hashedPassword;
-    const savedUser = await this.usersRepository.save(currentUser);
-    
-    console.log(`💾 [RESET PASSWORD] User saved with new password: ${savedUser.password.substring(0, 20)}...`);
-
-    // Verify the password was actually updated
-    const verifyUser = await this.usersRepository.findOne({ where: { id: user.id } });
-    console.log(`🔍 [RESET PASSWORD] Verification - Password in DB: ${verifyUser.password.substring(0, 20)}...`);
-    
-    const passwordsMatch = verifyUser.password === hashedPassword;
-    console.log(`✅ [RESET PASSWORD] Password update verified: ${passwordsMatch}`);
-
-    if (!passwordsMatch) {
-      console.log(`❌ [RESET PASSWORD] Password update failed - passwords don't match`);
-      throw new BadRequestException('Failed to update password');
+    // Check if new password is the same as old password
+    const isSamePassword = await bcrypt.compare(newPassword, user.password);
+    if (isSamePassword) {
+      throw new BadRequestException('New password cannot be the same as the old password');
     }
+
+    // Hash new password using same bcrypt method as create and update
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Update user password
+    user.password = hashedPassword;
+    await this.usersRepository.save(user);
 
     // Mark reset code as used
     await this.passwordResetRepository.update(resetRecord.id, { isUsed: true });
-    console.log(`✅ [RESET PASSWORD] Reset code marked as used: ${resetRecord.id}`);
 
     // Log the password change
     await this.auditService.logChange('user', 'password_reset', user.id, user.id, {
       action: 'Password reset via email verification',
       email: user.email,
-      username: user.username
+      username: user.username,
+      resetCodeId: resetRecord.id
     });
 
-    console.log(`🎉 [RESET PASSWORD] Password successfully updated for user: ${user.email}`);
+    // Send confirmation email
+    try {
+      await this.emailService.sendPasswordChangeConfirmation(email, user.username);
+    } catch (error) {
+      console.error('Failed to send confirmation email:', error);
+      // Continue anyway - password was successfully reset
+    }
 
     return { message: 'Password reset successfully' };
   }
 
-  // =============== DEBUG METHODS ===============
+  // =============== PASSWORD VALIDATION HELPERS ===============
+
+  async validateCurrentPassword(userId: number, currentPassword: string): Promise<boolean> {
+    const user = await this.usersRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    
+    return bcrypt.compare(currentPassword, user.password);
+  }
+
+  async changePassword(userId: number, currentPassword: string, newPassword: string, auditUserId?: number): Promise<{ message: string }> {
+    // Verify current password
+    const isValid = await this.validateCurrentPassword(userId, currentPassword);
+    if (!isValid) {
+      throw new BadRequestException('Current password is incorrect');
+    }
+
+    // Check if new password is the same as current password
+    const user = await this.usersRepository.findOne({ where: { id: userId } });
+    const isSamePassword = await bcrypt.compare(newPassword, user.password);
+    if (isSamePassword) {
+      throw new BadRequestException('New password cannot be the same as current password');
+    }
+
+    // Hash new password using same bcrypt method
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Update password
+    user.password = hashedPassword;
+    await this.usersRepository.save(user);
+
+    // Log the password change
+    if (auditUserId) {
+      await this.auditService.logChange('user', 'password_changed', userId, auditUserId, {
+        action: 'Password changed via profile',
+        email: user.email,
+        username: user.username
+      });
+    }
+
+    return { message: 'Password changed successfully' };
+  }
+
+  // =============== DEBUG/ADMIN METHODS ===============
   
   async updatePasswordDirect(id: number, hashedPassword: string, userId?: number): Promise<User> {
-    console.log(`🔧 [UPDATE PASSWORD DIRECT] Updating password for user ID: ${id}`);
-    console.log(`🔧 [UPDATE PASSWORD DIRECT] New hashed password: ${hashedPassword.substring(0, 20)}...`);
-    
     const user = await this.findOne(id);
-    console.log(`🔧 [UPDATE PASSWORD DIRECT] Current password in DB: ${user.password.substring(0, 20)}...`);
     
     // Update password directly without hashing (password is already hashed)
     user.password = hashedPassword;
     const updatedUser = await this.usersRepository.save(user);
 
-    // Verify the password was saved
-    const verifyUser = await this.usersRepository.findOne({ where: { id } });
-    console.log(`🔧 [UPDATE PASSWORD DIRECT] Password after save: ${verifyUser.password.substring(0, 20)}...`);
-    console.log(`🔧 [UPDATE PASSWORD DIRECT] Password match: ${verifyUser.password === hashedPassword}`);
-
     // Log the change
     if (userId) {
       await this.auditService.logChange('user', 'password_changed', id, userId, {
-        action: 'Password changed via forgot password flow'
+        action: 'Password changed via admin/direct update',
+        email: user.email,
+        username: user.username
       });
     }
 
-    console.log(`✅ [UPDATE PASSWORD DIRECT] Password updated successfully for user ID: ${id}`);
     return updatedUser;
   }
+// Add this to your UsersService
+async directResetPassword(email: string, newPassword: string): Promise<{ message: string }> {
+  // Find user by email
+  const user = await this.usersRepository.findOne({ where: { email } });
+  if (!user) {
+    throw new BadRequestException('User not found');
+  }
+
+  // Hash new password using same bcrypt method
+  const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+  // Update user password
+  user.password = hashedPassword;
+  await this.usersRepository.save(user);
+
+  // Log the password change
+  await this.auditService.logChange('user', 'password_reset_direct', user.id, user.id, {
+    action: 'Password reset directly via email',
+    email: user.email,
+    username: user.username
+  });
+
+  return { message: 'Password reset successfully' };
+}
+
+
 
   async checkUserPassword(email: string): Promise<any> {
     const user = await this.usersRepository.findOne({ where: { email } });
@@ -341,51 +398,22 @@ export class UsersService {
   }
 
   async forceUpdatePassword(email: string, newPassword: string): Promise<any> {
-    console.log(`🔧 [FORCE UPDATE] Starting for email: ${email}`);
-    
     const user = await this.usersRepository.findOne({ where: { email } });
     if (!user) {
       throw new BadRequestException('User not found');
     }
 
-    console.log(`🔧 [FORCE UPDATE] User found: ${user.id}`);
-
-    // Hash password
+    // Hash password using same bcrypt method
     const hashedPassword = await bcrypt.hash(newPassword, 10);
-    console.log(`🔧 [FORCE UPDATE] Password hashed: ${hashedPassword.substring(0, 20)}...`);
 
-    // Try multiple update methods
-    
-    // Method 1: Direct update
-    const updateResult = await this.usersRepository.update(user.id, { password: hashedPassword });
-    console.log(`🔧 [FORCE UPDATE] Method 1 result:`, updateResult);
-
-    // Method 2: Save entity
+    // Update password
     user.password = hashedPassword;
-    const savedUser = await this.usersRepository.save(user);
-    console.log(`🔧 [FORCE UPDATE] Method 2 saved: ${savedUser.password.substring(0, 20)}...`);
-
-    // Method 3: Query builder
-    const queryResult = await this.usersRepository
-      .createQueryBuilder()
-      .update()
-      .set({ password: hashedPassword })
-      .where('id = :id', { id: user.id })
-      .execute();
-    console.log(`🔧 [FORCE UPDATE] Method 3 result:`, queryResult);
-
-    // Verify
-    const verifyUser = await this.usersRepository.findOne({ where: { id: user.id } });
-    console.log(`🔧 [FORCE UPDATE] Final verification: ${verifyUser.password.substring(0, 20)}...`);
+    await this.usersRepository.save(user);
 
     return {
-      message: 'Force update completed',
-      methods: {
-        update: updateResult,
-        save: savedUser.id,
-        queryBuilder: queryResult,
-      },
-      finalPassword: verifyUser.password.substring(0, 20) + '...'
+      message: 'Password force updated successfully',
+      email: user.email,
+      username: user.username
     };
   }
-}   
+}

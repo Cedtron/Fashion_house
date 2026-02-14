@@ -6,7 +6,8 @@
     "homepage": "https://themewagon.github.io/FashionHouse",
     "scripts": {
         "dev": "vite",
-        "build": "vite build",
+        "build": "vite build --mode production",
+        "build:prod": "NODE_ENV=production vite build --mode production",
         "deploy": "vite build && gh-pages --dotfiles -d dist",
         "lint": "eslint .",
         "preview": "vite preview"

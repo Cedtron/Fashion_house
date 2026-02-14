@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"path": "../.."
+		},
+		{
+			"path": "../../../../fashion_backend"
+		}
+	],
+	"settings": {
+		"typescript.autoClosingTags": false
+	}
+}

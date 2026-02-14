@@ -6,6 +6,7 @@ import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import Cookies from "js-cookie";
 import { FiUser, FiMail, FiPhone, FiShield, FiClock, FiEdit, FiCamera, FiMapPin, FiEye, FiEyeOff } from "react-icons/fi";
+import { getImageUrl } from "../utils/imageUtils";
 
 type User = {
   id: number;
@@ -153,9 +154,13 @@ export default function UserProfile() {
                 }`}>
                   {user.imagePath ? (
                     <img 
-                      src={user.imagePath} 
+                      src={getImageUrl(user.imagePath)}
                       alt={user.username}
                       className="w-24 h-24 rounded-full object-cover"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                        e.currentTarget.parentElement?.classList.add(getAvatarColor(user.username));
+                      }}
                     />
                   ) : (
                     getUserInitial(user.username)

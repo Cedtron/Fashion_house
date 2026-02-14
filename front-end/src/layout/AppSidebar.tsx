@@ -195,7 +195,7 @@ export default function AppSidebar() {
 
   return (
     <aside
-      className={`fixed top-0 mt-16 lg:mt-0 h-screen bg-white dark:bg-gray-900 transition-all border-r 
+      className={`fixed top-0 mt-16 lg:mt-0 h-screen bg-white dark:bg-gray-900 transition-all border-r z-40
         ${isExpanded || isMobileOpen || isHovered ? "w-[290px]" : "w-[90px]"} 
         ${isMobileOpen ? "translate-x-0" : "-translate-x-full"} 
         lg:translate-x-0`}

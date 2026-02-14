@@ -355,7 +355,7 @@ const Home: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <PageMeta title="Stock Tracker - Fashion House" description="Track and manage stock inventory" />
       <ToastContainer
         position="bottom-right"
@@ -370,27 +370,13 @@ const Home: React.FC = () => {
         theme="light"
       />
 
-      <div className="px-4 py-8 mx-auto max-w-7xl sm:px-6 lg:px-8">
+      <div className="px-4 py-6 sm:py-8 mx-auto max-w-7xl sm:px-6 lg:px-8">
         {/* Header */}
-        <div className="mb-8">
+        <div className="mb-6 sm:mb-8">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Fashion house Dashboard</h1>
-              <p className="mt-2 text-gray-600">Monitor and manage your inventory in real-time</p>
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={exportToCSV}
-                className="flex items-center gap-2 px-4 py-2 text-white transition-colors bg-green-600 rounded-lg hover:bg-green-700"
-              >
-                Export CSV
-              </button>
-              <button
-                onClick={exportToJSON}
-                className="flex items-center gap-2 px-4 py-2 text-white transition-colors bg-purple-600 rounded-lg hover:bg-purple-700"
-              >
-                Export JSON
-              </button>
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Fashion house Dashboard</h1>
+              <p className="mt-2 text-sm sm:text-base text-gray-600">Monitor and manage your inventory in real-time</p>
             </div>
           </div>
         </div>
@@ -399,7 +385,7 @@ const Home: React.FC = () => {
           <>
             <DashboardStats stats={dashboardStats} />
 
-         <div className="grid grid-cols-2 gap-8 mb-8 xl:grid-cols-2">
+         <div className="grid grid-cols-1 gap-6 mb-6 sm:mb-8 lg:grid-cols-2 xl:gap-8">
   <div className="w-full h-full">
     {/* <ActivityChart data={getChartData()} trackingStats={trackingStats} /> */}
 
@@ -441,10 +427,6 @@ const Home: React.FC = () => {
           />
         )}
       </div>
-
-
-
-    
     </div>
   );
 };

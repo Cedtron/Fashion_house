@@ -1,4 +1,5 @@
 import { getToken, getUser } from './auth';
+import Cookies from 'js-cookie';
 
 export async function verifyToken() {
   const token = getToken();
@@ -25,7 +26,10 @@ export async function verifyToken() {
 }
 
 export function logout() {
+  // Clear from both localStorage and cookies
   localStorage.removeItem('token');
   localStorage.removeItem('user');
+  Cookies.remove('token');
+  Cookies.remove('user');
   window.location.href = '/signin';
 }

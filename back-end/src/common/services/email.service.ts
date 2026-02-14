@@ -23,4 +23,21 @@ export class EmailService {
       return false;
     }
   }
+
+  async sendPasswordChangeConfirmation(email: string, username: string): Promise<boolean> {
+    try {
+      // For development, just log the confirmation
+      // In production, integrate with email service like SendGrid, AWS SES, etc.
+      
+      this.logger.log(`Password change confirmation for ${email}`);
+      console.log(`\n✅ PASSWORD CHANGED SUCCESSFULLY for ${email}\n`);
+      console.log(`📧 Confirmation would be sent to: ${username} (${email})`);
+      console.log(`🔒 Your password has been successfully updated\n`);
+      
+      return true;
+    } catch (error) {
+      this.logger.error(`Failed to send password change confirmation to ${email}:`, error);
+      return false;
+    }
+  }
 }
