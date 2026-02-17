@@ -4,9 +4,11 @@ import { toast, ToastContainer } from "react-toastify";
 import { FiSearch, FiEdit, FiTrash2, FiPlus, FiX, FiEye, FiCopy, FiDroplet, FiCamera, FiImage } from "react-icons/fi";
 import PageBreadcrumb from "../components/common/PageBreadCrumb";
 import PageMeta from "../components/common/PageMeta";
+import ImageSearchModal from "../components/ImageSearchModal";
 import api from '../utils/axios';
 import Cookies from "js-cookie";
 import { getImageUrl } from '../utils/imageUtils';
+import { compressImageForStorage } from '../utils/imageCompression';
 
 interface Category {
   id: number;
@@ -35,6 +37,7 @@ interface Stock {
   shades: Shade[];
   createdAt: string;
   updatedAt: string;
+  similarity?: number; // For image search results
 }
 
 interface StockFormData {
@@ -472,9 +475,15 @@ export default function StockPage() {
       // If there's an image file, upload it using the dedicated endpoint
       if (imageFile && savedStock && savedStock.id) {
         try {
-          console.log(`[onSubmit] Uploading image for stock ${savedStock.id}`, imageFile);
+          console.log(`[onSubmit] Compressing and uploading image for stock ${savedStock.id}`);
+          
+          // Compress image before uploading
+          toast.info('Compressing image...');
+          const compressedImage = await compressImageForStorage(imageFile);
+          console.log(`Image compressed: ${(imageFile.size / 1024).toFixed(2)}KB → ${(compressedImage.size / 1024).toFixed(2)}KB`);
+          
           const fd = new FormData();
-          fd.append('image', imageFile);
+          fd.append('image', compressedImage);
 
           // Don't set Content-Type header; let axios/browser set multipart boundary
           const uploadRes = await api.post(`/stock/${savedStock.id}/image`, fd, {
@@ -528,16 +537,11 @@ export default function StockPage() {
   };
 
   // Handle search by image
-  const handleSearchByImage = async () => {
-    if (!searchImageFile) {
-      toast.error("Please upload an image to search");
-      return;
-    }
-
+  const handleSearchByImage = async (file: File) => {
     setIsSearching(true);
     try {
       const formData = new FormData();
-      formData.append('image', searchImageFile);
+      formData.append('image', file);
 
       const response = await api.post('/stock/search-by-photo', formData, {
         headers: {
@@ -545,18 +549,40 @@ export default function StockPage() {
         },
       });
 
-      setSearchResults(response.data);
+      console.log('Search response:', response.data);
       
-      if (response.data.length === 0) {
-        toast.info("No similar products found");
+      // Extract results from response
+      const results = response.data.results || [];
+      
+      if (results.length === 0) {
+        toast.info("No matching products found. Try a different image!");
+        setSearchResults([]);
       } else {
-        const method = response.data[0]?.searchMethod;
-        const methodText = method === 'rekognition' ? 'Amazon Rekognition' : 'hash-based search';
-        toast.success(`Found ${response.data.length} similar products using ${methodText}!`);
+        // Extract stock items from results and add similarity info
+        const matchedStocks = results.map((result: any) => ({
+          ...result.stock,
+          similarity: result.similarity, // Add similarity score to stock object
+        }));
+        setSearchResults(matchedStocks);
+        
+        // Close the search modal
+        closeSearchModal();
+        
+        // Show success message with sweet words
+        const sweetMessages = [
+          `🎯 Perfect match! Found ${results.length} similar ${results.length === 1 ? 'product' : 'products'}!`,
+          `✨ Amazing! Discovered ${results.length} matching ${results.length === 1 ? 'item' : 'items'} for you!`,
+          `🎉 Great news! Located ${results.length} similar ${results.length === 1 ? 'product' : 'products'}!`,
+          `💫 Wonderful! Found ${results.length} ${results.length === 1 ? 'match' : 'matches'} in your inventory!`,
+        ];
+        const randomMessage = sweetMessages[Math.floor(Math.random() * sweetMessages.length)];
+        toast.success(randomMessage);
       }
     } catch (error: any) {
       console.error('Error searching by image:', error);
-      toast.error(error.response?.data?.message || "Failed to search by image");
+      const errorMessage = error.response?.data?.message || "Oops! Image search failed. Please try again.";
+      toast.error(errorMessage);
+      setSearchResults([]);
     } finally {
       setIsSearching(false);
     }
@@ -639,11 +665,13 @@ export default function StockPage() {
     setViewModalOpen(true);
   };
 
-  // Filter stocks based on search term
-  const filteredStocks = stocks.filter(item =>
-    item.product.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.stockId.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Filter stocks based on search term or search results
+  const filteredStocks = searchResults.length > 0 
+    ? searchResults // Show only search results when available
+    : stocks.filter(item =>
+        item.product.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.stockId.toLowerCase().includes(searchTerm.toLowerCase())
+      );
 
   return (
     <div>
@@ -676,10 +704,20 @@ export default function StockPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            {searchResults.length > 0 && (
+              <div className="px-3 py-2 text-sm bg-green-100 text-green-700 rounded-md dark:bg-green-900/30 dark:text-green-300">
+                Showing {searchResults.length} search {searchResults.length === 1 ? 'result' : 'results'}
+              </div>
+            )}
+            
             <button
-              onClick={() => fetchStocks()}
+              onClick={() => {
+                fetchStocks();
+                setSearchResults([]);
+                setSearchTerm("");
+              }}
               className="px-3 py-2 text-sm bg-gray-100 rounded-md hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600"
-              title="Clear filters"
+              title="Clear filters and search results"
             >
               Clear
             </button>
@@ -725,7 +763,14 @@ export default function StockPage() {
                 {filteredStocks.map((item) => (
                   <tr key={item.id} className="border-t hover:bg-gray-50 dark:hover:bg-gray-800/50 dark:border-gray-700">
                     <td className="p-3 font-mono font-semibold text-coffee-600">
-                      {item.stockId}
+                      <div className="flex flex-col gap-1">
+                        <span>{item.stockId}</span>
+                        {searchResults.length > 0 && item.similarity && (
+                          <span className="px-2 py-1 text-xs font-semibold text-green-700 bg-green-100 rounded-full dark:bg-green-900/30 dark:text-green-300 w-fit">
+                            {item.similarity}% match
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="p-3">
                       <div className="flex flex-col">
@@ -756,7 +801,7 @@ export default function StockPage() {
                         <div className="text-xs">
                           <span className="font-semibold">{item.shades.length} shades</span>
                           <div className="flex flex-wrap gap-1 mt-1">
-                            {item.shades.slice(0, 3).map((shade, idx) => (
+                            {item.shades.slice(0, 3).map((shade: Shade, idx: number) => (
                               <div
                                 key={idx}
                                 className="w-3 h-3 border rounded-sm"
@@ -1526,6 +1571,14 @@ export default function StockPage() {
             </div>
           </div>
         )}
+
+        {/* Image Search Modal */}
+        <ImageSearchModal
+          isOpen={searchImageModalOpen}
+          onClose={closeSearchModal}
+          onSearch={handleSearchByImage}
+          isSearching={isSearching}
+        />
       </div>
     </div>
   );

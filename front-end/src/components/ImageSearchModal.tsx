@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { FiX, FiCamera, FiUpload, FiSearch } from 'react-icons/fi';
 import { toast } from 'react-toastify';
+import { compressImageForSearch } from '../utils/imageCompression';
 
 interface ImageSearchModalProps {
   isOpen: boolean;
@@ -39,10 +40,25 @@ export default function ImageSearchModal({ isOpen, onClose, onSearch, isSearchin
 
   const openCamera = async () => {
     try {
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' }, // Use back camera on mobile
+      // Request camera permission with constraints
+      const constraints = {
+        video: { 
+          facingMode: 'environment', // Use back camera on mobile
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
         audio: false,
-      });
+      };
+
+      // Check if browser supports getUserMedia
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        toast.error('Camera not supported on this browser. Please use Chrome, Firefox, or Safari.');
+        return;
+      }
+
+      toast.info('Requesting camera access... Please allow camera permission.');
+      
+      const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
       
       setStream(mediaStream);
       setIsCameraOpen(true);
@@ -51,10 +67,20 @@ export default function ImageSearchModal({ isOpen, onClose, onSearch, isSearchin
         videoRef.current.srcObject = mediaStream;
       }
       
-      toast.success('Camera opened! Click "Capture Photo" to take a picture');
-    } catch (error) {
+      toast.success('📸 Camera ready! Click "Capture Photo" to take a picture');
+    } catch (error: any) {
       console.error('Error accessing camera:', error);
-      toast.error('Failed to access camera. Please check permissions.');
+      
+      // Provide specific error messages
+      if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+        toast.error('Camera access denied. Please allow camera permission in your browser settings and try again.');
+      } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+        toast.error('No camera found on this device.');
+      } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
+        toast.error('Camera is already in use by another application.');
+      } else {
+        toast.error('Failed to access camera. Please check your browser permissions.');
+      }
     }
   };
 
@@ -97,8 +123,8 @@ export default function ImageSearchModal({ isOpen, onClose, onSearch, isSearchin
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error('Image size should be less than 5MB');
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error('Image size should be less than 10MB');
         return;
       }
 
@@ -117,7 +143,19 @@ export default function ImageSearchModal({ isOpen, onClose, onSearch, isSearchin
       return;
     }
 
-    await onSearch(imageFile);
+    try {
+      // Compress image before searching
+      toast.info('Compressing image...');
+      const compressedFile = await compressImageForSearch(imageFile);
+      
+      console.log(`Original: ${(imageFile.size / 1024).toFixed(2)}KB → Compressed: ${(compressedFile.size / 1024).toFixed(2)}KB`);
+      
+      await onSearch(compressedFile);
+    } catch (error) {
+      console.error('Error compressing image:', error);
+      toast.error('Failed to compress image. Using original...');
+      await onSearch(imageFile);
+    }
   };
 
   const handleClose = () => {

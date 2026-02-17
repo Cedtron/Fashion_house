@@ -1,5 +1,6 @@
 import React from 'react';
 import { FiSave, FiX, FiMinus, FiPlus, FiEdit, FiArrowLeft } from 'react-icons/fi';
+import { getImageUrl } from '../../utils/imageUtils';
 
 interface Shade {
   id: number;
@@ -168,9 +169,13 @@ const StockDetails: React.FC<StockDetailsProps> = ({
           {stock.imagePath && (
             <div className="flex justify-center items-start">
               <img
-                src={stock.imagePath}
+                src={getImageUrl(stock.imagePath)}
                 alt={stock.product}
                 className="w-48 h-48 rounded-xl border border-gray-200 object-cover shadow-md"
+                onError={(e) => {
+                  console.error('Failed to load image:', getImageUrl(stock.imagePath));
+                  e.currentTarget.style.display = 'none';
+                }}
               />
             </div>
           )}
